@@ -21,12 +21,15 @@
 // CameraPlaceholder camera;
 
 void setup() {
-  // TODO: Initialize serial communication
+  // Initialize serial communication (optional)
+
+  // Initialize onboard LED pin
   // TODO: Initialize all subsystems
   // TODO: Configure system parameters
 }
 
 void loop() {
+  // Blink onboard LED
   // TODO: Main control loop
   // TODO: Update sensors
   // TODO: Process control logic
