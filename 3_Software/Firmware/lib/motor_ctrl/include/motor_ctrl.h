@@ -1,7 +1,9 @@
-// #ifndef MOTOR_CTRL_H
-// #define MOTOR_CTRL_H
+#ifndef MOTOR_CTRL_H
+#define MOTOR_CTRL_H
 
-// #include <Arduino.h>
+#include <Arduino.h>
+#include "driver/gpio.h"   // for GPIO_NUM_X when building with Arduino-ESP32
+
 
 class MotorCtrl
 {
@@ -36,4 +38,4 @@ public:
     float getBackRightPercent();
 };
 
-// #endif // MOTOR_CTRL_H
+#endif // MOTOR_CTRL_H
