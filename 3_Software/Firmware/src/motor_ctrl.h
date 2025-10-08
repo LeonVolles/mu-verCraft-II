@@ -3,31 +3,32 @@
 
 #include <Arduino.h>
 
-class MotorCtrl {
+class MotorCtrl
+{
 private:
     float frontLeftPercent;
     float frontRightPercent;
     float backLeftPercent;
     float backRightPercent;
-    
+
 public:
     MotorCtrl();
-    
-    // Initialization
-    void init();
-    
+
+    // Initialization with 4 IO pins
+    void init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gpio_num_t br_pin);
+
     // Update function (called in main loop)
     void update();
-    
+
     // Individual motor control (-100% to +100%)
     void setFrontLeftPercent(float pct);
     void setFrontRightPercent(float pct);
     void setBackLeftPercent(float pct);
     void setBackRightPercent(float pct);
-    
+
     // Set all motors at once
     void setAllPercent(float fl, float fr, float bl, float br);
-    
+
     // Get current motor percentages
     float getFrontLeftPercent();
     float getFrontRightPercent();
