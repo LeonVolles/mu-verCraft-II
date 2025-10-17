@@ -1,0 +1,19 @@
+﻿  MODEL A00_HOVERCRAFT :
+ 
+
+  1 CIRCULAR REFERENCE LOOPS FOUND
+ 
+
+   LOOP #  1
+
+   Depth of loop is 3
+
+Feature number 10 (COMPONENT, id = 158) 
+  in model B00_MAIN_CHASSIS_ASM refers to:
+
+Feature number 5 (EXTRUDE_1, id = 41) 
+  in model B02_FOAM_RING refers to:
+
+Feature number 10 (COMPONENT, id = 158) 
+  in model B00_MAIN_CHASSIS_ASM - circle closed.
+
