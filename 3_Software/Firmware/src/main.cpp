@@ -21,11 +21,17 @@ void setup()
   // Initialize serial communication
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
-  delay(50);
+  delay(2500);
   imu.init();
   if (!imu.isReady())
   {
     Serial.println("IMU init failed. Check wiring.");
+  }
+  else
+  {
+    Serial.println("Calibrating IMU... keep still");
+    imu.calibrateAccelReference(500, 5);
+    Serial.println("Calibrating IMU... done");
   }
 }
 
@@ -41,7 +47,15 @@ void loop()
     imu.getAccel_raw(&ax, &ay, &az);
     imu.getGyro_raw(&gx, &gy, &gz);
 
+    // Corrected acceleration (level frame)
+    float axc, ayc, azc;
+    imu.getAccel_corrected(&axc, &ayc, &azc);
+
+    // Optional: corrected tilt (deg) to verify close to 0/0 after calibration
+    float rc, pc, yc;
+    imu.getAngles_corrected(&rc, &pc, &yc);
+
     // Compact print: A:ax,ay,az G:gx,gy,gz
-    Serial.printf("A:%.2f,%.2f,%.2f G:%.3f,%.3f,%.3f\n", ax, ay, az, gx, gy, gz);
+    Serial.printf("A:%.2f,%.2f,%.2f Ac:%.2f,%.2f,%.2f G:%.3f,%.3f,%.3f Rc:%.1f Pc:%.1f\n", ax, ay, az, axc, ayc, azc, gx, gy, gz, rc, pc);
   }
 }
