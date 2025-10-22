@@ -3,50 +3,32 @@
 
 #include <Arduino.h>
 
+// Forward declaration to avoid pulling the Adafruit header into every user
+class Adafruit_MPU6050;
+
 class IMU
 {
 private:
-    float accelX, accelY, accelZ;
-    float gyroX, gyroY, gyroZ;
-    float roll, pitch, yaw;
+    Adafruit_MPU6050 *_mpu; // allocated in init()
+    bool _ready;
 
 public:
-    // Constructor
     IMU();
+    ~IMU();
 
-    // Initialization
+    // Initialize the sensor (Wire + MPU6050). Safe to call once.
     void init();
+    bool isReady() const { return _ready; }
 
-    // Reset global IMU coordinate system
-    void resetGlobalCoordSystem();
+    // Raw sensor accessors (SI units):
+    // - Acceleration in m/s^2
+    // - Angular rates in rad/s
+    void getAccel_raw(float *ax, float *ay, float *az);
+    void getGyro_raw(float *gx, float *gy, float *gz);
 
-    // Update function with delta time
-    void update(float dt_s);
-
-    // ***Gyroscope data***
-    void getGyro(float *gx, float *gy, float *gz);
-
-    // Angle data (Euler angles)
-    void setAngles(float roll, float pitch, float yaw);
-    void getAngles(float *roll, float *pitch, float *yaw);
-
-    // Individual angle getters
-    float getAngleRoll();
-    float getAnglePitch();
-    float getAngleYaw();
-
-    // ***Accelerometer data***
-    // Accelerations x,y,z
-    void getAccel(float *ax, float *ay, float *az);
-
-    // Position data x,y,z
-    void getPosition(float *x, float *y, float *z);
-    void setPosition(float x, float y, float z);
-
-    // Individual position setters
-    void setPositionX(float x);
-    void setPositionY(float y);
-    void setPositionZ(float z);
+    // Quick tilt estimate (deg) derived from accelerometer only.
+    // Yaw is not observable without mag/gyro integration, returned as 0.
+    void getAngles_raw(float *roll_deg, float *pitch_deg, float *yaw_deg);
 };
 
 #endif // IMU_H
