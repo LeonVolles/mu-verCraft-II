@@ -6,12 +6,13 @@
 
 // IO Pins
 
-// Contrl loop constants
-// T = 
-// p;i;d;
-//filter??
+// Control loop constants
+f_loop = 100; // Hz
+T_loop = 1.0 / f_loop; // s
+// pid;
+// filter??
 
-// Dimentions
+// Dimensions
 // sensor positions
 // motor positions
 
