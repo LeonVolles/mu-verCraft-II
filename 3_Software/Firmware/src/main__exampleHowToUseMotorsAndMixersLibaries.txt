@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
 // Include file for all global variables
-#include "variables.h"
+#include "hovercraft_variables.h"
 
 // Include all subsystem headers
 #include <motor_ctrl.h>
@@ -18,7 +18,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-// Motor controller with global power scaler, defined in variables.h!!
+// Motor controller with global power scaler, defined in hovercraft_variables.h!!
 MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduces the max power to avoid smoking motors, adjust depending on kV of motors
 
 // Mixer that uses the motor controller
