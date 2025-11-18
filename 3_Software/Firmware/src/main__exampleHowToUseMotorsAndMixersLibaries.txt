@@ -6,7 +6,7 @@
 // Include all subsystem headers
 #include <motor_ctrl.h>
 #include <motor_mixer.h>
-// #include <imu.h>       // FOR NOW NOT AT ALL FUNCTIONAL!!!
+// #include <imu.h>
 #include <wifi_manager.h>
 #include <network_piloting.h>
 #include <ir_sensors.h>
