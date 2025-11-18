@@ -12,39 +12,15 @@
 
 // Added definitions for the test
 const int LED_PIN = LED_BUILTIN;
-const int16_t PEAKSPEED = 750; // select between 0 and +999, extreme values may not work with all ESCs
-
-// Global subsystem instances
-MotorCtrl motorCtrl;
 
 void setup()
 {
   // Initialize serial communication
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
-  // Initialize motorCtrl with front left on GPIO1; use dummy pins for others
-  motorCtrl.init(GPIO_NUM_1, GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_4);
 }
 
 void loop()
 {
-  // Motor speed ramp test using motor_ctrl functions
-  static int16_t motorSpeed = 0;
-  static int increaseDirection = 1;
-
-  motorCtrl.setFrontLeftPercent(motorSpeed);
-  motorCtrl.setFrontRightPercent(motorSpeed);
-  motorCtrl.setBackLeftPercent(motorSpeed);
-  motorCtrl.setBackRightPercent(motorSpeed);
-  motorCtrl.update();
-
-  motorSpeed += increaseDirection * 5;
-  // Reverse direction at peak speed
-  if (motorSpeed >= PEAKSPEED || motorSpeed <= -PEAKSPEED)
-  {
-    increaseDirection *= -1;
-  }
-
-  digitalWrite(LED_PIN, motorSpeed > 0 ? HIGH : LOW);
   delay(20);
 }
