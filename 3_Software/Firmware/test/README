@@ -1,4 +1,3 @@
-
 This directory is intended for PlatformIO Test Runner and project tests.
 
 Unit Testing is a software testing method by which individual units of
@@ -9,3 +8,86 @@ in the development cycle.
 
 More information about PlatformIO Unit Testing:
 - https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
+
+---
+
+## Quick Start Guide
+
+### Folder Structure
+
+```
+test/
+├── test_blink/
+│   └── test_main.cpp
+├── test_4Motors/
+│   └── test_4Motors.cpp
+└── README
+```
+
+**Rule:** Each test goes in `test/test_<feature_name>/test_<feature_name>.cpp`
+
+### Required Test File Structure
+
+```cpp
+#include <Arduino.h>
+#include <unity.h>
+
+void setUp(void) { }        // Before each test
+void tearDown(void) { }     // After each test
+
+void test_something(void) {
+  TEST_ASSERT_EQUAL(expected, actual);
+}
+
+void setup() {
+  delay(2000);
+  UNITY_BEGIN();
+  RUN_TEST(test_something);
+}
+
+void loop() {
+  UNITY_END();
+}
+```
+
+### Common Assertions
+
+```cpp
+TEST_ASSERT_EQUAL(expected, actual);
+TEST_ASSERT_TRUE(condition);
+TEST_ASSERT_FALSE(condition);
+TEST_ASSERT_GREATER_THAN(threshold, value);
+TEST_ASSERT_NULL(pointer);
+TEST_ASSERT_EQUAL_STRING(expected, actual);
+```
+
+### Configuration (platformio.ini)
+
+```ini
+test_framework = unity
+test_build_src = no    # Required to avoid conflicts with src/main.cpp
+```
+
+### Running Tests
+
+```bash
+pio test           # Run all tests
+pio test -vv       # Verbose output
+
+Or to be more explicit:
+
+pio test -f test_blink -e seeed_xiao_esp32s3
+
+Where:
+
+-f test_blink filters to only the test_blink folder
+-e seeed_xiao_esp32s3 specifies the environment (optional)
+
+C:\Users\leonv\.platformio\penv\Scripts\platformio.exe test
+```
+
+### Function Naming
+
+- `setUp()` / `tearDown()` - lowercase, runs before/after each test
+- `test_<name>()` - starts with `test_`, lowercase with underscores
+- `setup()` / `loop()` - Arduino entry points (required)
