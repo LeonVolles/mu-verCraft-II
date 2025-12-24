@@ -28,6 +28,9 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 // Mixer that uses the motor controller
 MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
 
+// IR Line Sensors
+IRSensors irSensors(IR1_PIN, IR2_PIN, IR3_PIN, global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+
 // Struct+Queue for communication between WIFI-Control and Motor Management
 struct ControlSetpoints
 {
@@ -125,12 +128,30 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
+  // If you need to access the global object, you can just use 'irSensors' directly,
+  // or pass it via parameter if you prefer strict encapsulation.
+  // Here we use the global object 'irSensors'.
+
   for (;;)
   {
-    // Placeholder for IR sensor handling code
-    Serial.print("task_irSensors running on core ");
-    Serial.println(xPortGetCoreID());
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // Check if the ISRs have completed a full measurement set
+    if (irSensors.hasNewMeasurement())
+    {
+      float alpha = irSensors.getAlphaToLine();
+      float vPerp = irSensors.getVelocityPerpToLine();
+
+      // Clear the flag so we don't read the same event multiple times
+      irSensors.consumeNewMeasurement();
+
+      // For now: Debug output.
+      // Later: Send this to a Navigation/Control Queue.
+      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+    }
+
+    // Polling interval. Since line crossings are short events handled by ISRs,
+    // this task just needs to pick up the results frequently enough not to miss
+    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }
 
@@ -173,6 +194,9 @@ void setup()
   // Initialize motor mixer
   motorMixer.init();
 
+  // Initialize IR Sensors (attaches interrupts), Ensure the pins are set up correctly inside begin()
+  irSensors.begin();
+
   // **************************************************
   // CREATE RTOS QUEUES FOR COMMUNICATION BETWEEN TASKS
   // **************************************************
@@ -201,7 +225,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_wifiManager,
       "task_wifiManager",
-      20000,
+      4096, // stack size, needs to be adjusted when code is written
       NULL,
       1,
       &taskH_wifi,
@@ -211,7 +235,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_imu,
       "task_imu",
-      20000,
+      4096, // stack size, needs to be adjusted when code is written
       NULL,
       1,
       &taskH_imu,
@@ -221,7 +245,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_motorManagement,
       "task_motorManagement",
-      20000,
+      4096,        // stack size, may need to be adjusted
       &motorMixer, // pass pointer to MotorMixer
       1,
       &taskH_motorManagement,
@@ -231,17 +255,17 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_irSensors,
       "task_irSensors",
-      20000,
+      4096, // smaller stack as not much is done here, this should be fine, to see in future
       NULL,
-      1,
-      &taskH_irSensors,
+      2,                // higher priority to stay up to date with line crossings
+      &taskH_irSensors, // pass pointer to IR-Sensor function
       1);
 
   // Battery Monitor Task
   xTaskCreatePinnedToCore(
       &task_batteryMonitor,
       "task_batteryMonitor",
-      20000,
+      2048, // stack size, needs to be adjusted when code is written, but probably not too big
       NULL,
       1,
       &taskH_batteryMonitor,
@@ -251,4 +275,6 @@ void setup()
 void loop()
 {
   // Nothing to do here for now
+  //??  Copilot suggested:
+  // vTaskDelay(1000 / portTICK_PERIOD_MS);
 }

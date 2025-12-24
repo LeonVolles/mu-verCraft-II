@@ -6,6 +6,9 @@
 // Define all IO-Pins (actual definitions)
 // *************************************************
 const int LED_PIN = LED_BUILTIN;
+const int IR1_PIN = 1; // IR Sensor 1 = Back sensor = GPIO1
+const int IR2_PIN = 2; // IR Sensor 2 = Front-Left sensor = GPIO2
+const int IR3_PIN = 3; // IR Sensor 3 = Front-Right sensor = GPIO3
 
 // *************************************************
 // Battery limits (actual definitions)
@@ -13,7 +16,7 @@ const int LED_PIN = LED_BUILTIN;
 const float global_BatteryVoltageLow_WarningLow = 7.4f;     // warning with LED/Wifi when below this voltage, for 2s LiPo ~3.70V per cell
 const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should stop turning below this voltage, for 2s LiPo ~3.50V per cell
 
-const float global_BatteryVoltage_DividerRatio = 2.0f;             // voltage divider ratio, depends on the resistors used for voltage divider
+const float global_BatteryVoltage_DividerRatio = 2.0f;              // voltage divider ratio, depends on the resistors used for voltage divider
 const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 30.0f; // see ESC datasheet
 
 // *************************************************
@@ -47,5 +50,14 @@ bool global_MotorsReversedBR = true;  // Back Right motor reversed
 // *************************************************
 // Dimensions
 // *************************************************
+// IR Sensor distance a (actual definition)
+const float global_IRSensorDistance_a_meters = 1; // TODOOOO!! distance between neighboring IR-sensors (hypothese of an equilateral triangle with side length a)
+
 // sensor positions
 // motor positions
+
+// *************************************************
+// Thresholds, limits, etc.
+// *************************************************
+// IR-line sensor thresholds
+const float global_IRSensor_Threshold = 0.7f; // example threshold value for IR sensors when a line is detected, adjust based on calibration
