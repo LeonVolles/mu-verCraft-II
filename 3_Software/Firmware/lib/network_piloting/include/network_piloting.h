@@ -36,3 +36,30 @@
 // };
 
 // #endif // NETWORK_PILOTING_H
+
+#pragma once
+
+#include <Arduino.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <functional>
+
+class NetworkPiloting
+{
+public:
+	NetworkPiloting();
+
+	void begin();
+	void loop();
+
+	void setLiftCallback(const std::function<void(float)> &callback);
+	float getLift() const;
+
+private:
+	AsyncWebServer server_;
+	AsyncWebSocket ws_;
+	float lift_;
+	std::function<void(float)> onLift_;
+
+	void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+};

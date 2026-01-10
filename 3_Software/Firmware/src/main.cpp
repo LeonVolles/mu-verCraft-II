@@ -28,6 +28,13 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 // Mixer that uses the motor controller
 MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
 
+// Network + WiFi helpers
+WifiManager wifiManager;
+NetworkPiloting networkPiloting;
+// http://192.168.4.1/
+static const char *AP_SSID = "µ-verCraft-II AP";
+static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
+
 // Struct+Queue for communication between WIFI-Control and Motor Management
 struct ControlSetpoints
 {
@@ -71,16 +78,19 @@ void task_wifiManager(void *parameter)
 {
   for (;;)
   {
-    // Here you would read the latest user inputs
-    ControlSetpoints mySetPoint;
-    mySetPoint.lift = 40.0f; // replace with actual values from web UI
-    mySetPoint.thrust = 25.0f;
-    mySetPoint.diffThrust = 10.0f;
+    // // Here you would read the latest user inputs
+    // ControlSetpoints mySetPoint;
+    // mySetPoint.lift = 40.0f; // replace with actual values from web UI
+    // mySetPoint.thrust = 25.0f;
+    // mySetPoint.diffThrust = 10.0f;
 
-    if (g_controlQueue != nullptr)
-    {
-      xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
-    }
+    // if (g_controlQueue != nullptr)
+    // {
+    //   xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
+    // }
+
+    // Cleanup websocket clients (Async server handles everything else)
+    networkPiloting.loop();
 
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
@@ -182,6 +192,21 @@ void setup()
   {
     Serial.println("Failed to create control queue");
   }
+
+  // **************************************************
+  // START WIFI ACCESS POINT + WEB CONTROL
+  // **************************************************
+  wifiManager.startAccessPoint(AP_SSID, AP_PASSWORD);
+
+  networkPiloting.setLiftCallback([](float liftPercent) {
+    if (g_controlQueue != nullptr)
+    {
+      ControlSetpoints setpoints{liftPercent, 0.0f, 0.0f};
+      xQueueOverwrite(g_controlQueue, &setpoints);
+    }
+    Serial.printf("Lift=%.1f%%\n", liftPercent);
+  });
+  networkPiloting.begin();
 
   // **************************************************
   // CREATE RTOS TASKS FOR EACH SUBSYSTEM
