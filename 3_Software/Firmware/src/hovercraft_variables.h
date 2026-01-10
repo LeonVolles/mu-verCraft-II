@@ -14,6 +14,11 @@
 // Declaration, the actual value is defined in variables.cpp
 extern const int LED_PIN;
 
+// IR sensor pins (legacy names used by some modules)
+extern const int IR1_PIN;
+extern const int IR2_PIN;
+extern const int IR3_PIN;
+
 // Motor IO/DSHOT Pins
 // These are compile time constants, it is fine to keep the definitions in the header
 static const gpio_num_t global_PIN_MOTOR_FL = GPIO_NUM_8;
@@ -77,5 +82,8 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 // *************************************************
 // sensor positions
 // motor positions
+
+// IR sensor distance a (equilateral triangle side length)
+extern const float global_IRSensorDistance_a_meters;
 
 #endif // HOVERCRAFT_VARIABLES_H

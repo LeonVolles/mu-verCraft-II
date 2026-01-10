@@ -11,7 +11,7 @@
 // Include all subsystem headers
 #include <motor_ctrl.h>
 #include <motor_mixer.h>
-// #include <imu.h>       // FOR NOW NOT AT ALL FUNCTIONAL!!!
+#include <imu.h>
 #include <wifi_manager.h>
 #include <network_piloting.h>
 #include <ir_sensors.h>
@@ -27,6 +27,9 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 
 // Mixer that uses the motor controller
 MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
+
+// IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
+IMU imu;
 
 // IR Line Sensors
 IRSensors irSensors(IR1_PIN, IR2_PIN, IR3_PIN, global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
@@ -91,12 +94,49 @@ void task_wifiManager(void *parameter)
 
 void task_imu(void *parameter)
 {
+  (void)parameter;
+
+  // Let other subsystems bring Serial up.
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+
+  Serial.printf("[IMU] task running on core %d\n", xPortGetCoreID());
+  imu.init();
+
+  Serial.printf("[IMU] ready=%d accel=%d gyro=%d mag=%d baro=%d\n",
+                (int)imu.isReady(), (int)imu.hasAccel(), (int)imu.hasGyro(), (int)imu.hasMag(), (int)imu.hasBaro());
+
+  // Optional: calibrate accel reference (keep craft still + level for ~1s)
+  if (imu.hasAccel())
+  {
+    Serial.println("[IMU] calibrating accel reference...");
+    imu.calibrateAccelReference(200, 5);
+    Serial.println("[IMU] accel calibration done");
+  }
+
+  TickType_t lastWake = xTaskGetTickCount();
+  const TickType_t period = 50 / portTICK_PERIOD_MS; // 20 Hz
+
   for (;;)
   {
-    // Placeholder for IMU handling code
-    Serial.print("task_imu running on core ");
-    Serial.println(xPortGetCoreID());
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    float ax, ay, az;
+    float gx, gy, gz;
+    int16_t mx, my, mz;
+    float head;
+    float tempC, pres;
+
+    imu.getAccel_raw(&ax, &ay, &az);
+    imu.getGyro_raw(&gx, &gy, &gz);
+    imu.getMag_raw(&mx, &my, &mz, &head);
+    imu.getEnv(&tempC, &pres);
+
+    // Rate-limited debug output (SerialPlot friendly)
+    Serial.printf("ax:%.2f ay:%.2f az:%.2f gx:%.3f gy:%.3f gz:%.3f mx:%d my:%d mz:%d head:%.1f t:%.2f p:%.2f\n",
+                  ax, ay, az,
+                  gx, gy, gz,
+                  (int)mx, (int)my, (int)mz, head,
+                  tempC, pres);
+
+    vTaskDelayUntil(&lastWake, period);
   }
 }
 
