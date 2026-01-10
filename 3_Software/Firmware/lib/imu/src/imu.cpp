@@ -2,9 +2,30 @@
 
 #include <math.h>
 
-IMU::IMU()
+IMU::IMU(float yawAlpha)
     : _accel(12345), _mag(&Wire)
 {
+    setYawFilterAlpha(yawAlpha);
+}
+
+float IMU::wrap360(float deg)
+{
+    while (deg < 0.0f)
+        deg += 360.0f;
+    while (deg >= 360.0f)
+        deg -= 360.0f;
+    return deg;
+}
+
+// Returns shortest signed difference (target - current) in degrees, range [-180..180]
+float IMU::angleDiffDeg(float target_deg, float current_deg)
+{
+    float diff = wrap360(target_deg) - wrap360(current_deg);
+    if (diff > 180.0f)
+        diff -= 360.0f;
+    if (diff < -180.0f)
+        diff += 360.0f;
+    return diff;
 }
 
 void IMU::rotateToLevel(float roll_rad, float pitch_rad, float ax, float ay, float az,
@@ -85,6 +106,128 @@ void IMU::init()
 
     // Consider IMU "ready" if at least accel is present.
     _ready = _accelOk;
+
+    // Reset yaw filter state on init
+    _yawInitialized = false;
+    _yawGyroInitialized = false;
+    _lastYawUpdate_us = micros();
+}
+
+void IMU::setDeclinationDeg(float declination_deg)
+{
+    _declinationRad = declination_deg * PI / 180.0f;
+    if (_magOk)
+    {
+        _mag.setDeclinationAngle(_declinationRad);
+    }
+}
+
+void IMU::setYawFilterAlpha(float alpha)
+{
+    if (!isfinite(alpha))
+        return;
+    if (alpha < 0.0f)
+        alpha = 0.0f;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+    _yawAlpha = alpha;
+}
+
+void IMU::resetYawToMag()
+{
+    _yawInitialized = false;
+    _yawGyroInitialized = false;
+}
+
+void IMU::updateYawComplementary()
+{
+    // Read sensors needed for yaw, then forward to the measurement-based update.
+    float gz_rad_s = NAN;
+    if (_gyroOk)
+    {
+        float gx, gy, gz;
+        getGyro_raw(&gx, &gy, &gz);
+        gz_rad_s = gz;
+    }
+
+    float mag_heading_deg = NAN;
+    if (_magOk)
+    {
+        getMag_raw(nullptr, nullptr, nullptr, &mag_heading_deg);
+    }
+
+    updateYawComplementaryFrom(gz_rad_s, mag_heading_deg);
+}
+
+void IMU::updateYawComplementaryFrom(float gz_rad_s, float mag_heading_deg)
+{
+    const uint32_t now_us = micros();
+    float dt = 0.0f;
+    if (_lastYawUpdate_us != 0)
+    {
+        const uint32_t delta_us = now_us - _lastYawUpdate_us;
+        dt = (float)delta_us / 1e6f;
+    }
+    _lastYawUpdate_us = now_us;
+
+    const bool haveGyro = isfinite(gz_rad_s) && dt > 0.0f && dt < 1.0f;
+    const bool haveMag = isfinite(mag_heading_deg);
+
+    if (!_yawInitialized)
+    {
+        if (haveMag)
+        {
+            _yaw_deg = wrap360(mag_heading_deg);
+            _yawInitialized = true;
+            // Initialize gyro-only yaw to the same reference so both are comparable.
+            _yawGyro_deg = _yaw_deg;
+            _yawGyroInitialized = true;
+            return;
+        }
+
+        // If no magnetometer available yet, start at 0 and integrate gyro when possible.
+        _yaw_deg = wrap360(_yaw_deg);
+        _yawInitialized = haveGyro;
+        _yawGyro_deg = wrap360(_yawGyro_deg);
+        _yawGyroInitialized = haveGyro;
+        return;
+    }
+
+    if (!_yawGyroInitialized)
+    {
+        if (haveMag)
+        {
+            _yawGyro_deg = wrap360(mag_heading_deg);
+            _yawGyroInitialized = true;
+        }
+        else if (haveGyro)
+        {
+            _yawGyroInitialized = true;
+        }
+    }
+
+    // 1) Predict with gyro integration
+    float yaw_pred = _yaw_deg;
+    if (haveGyro)
+    {
+        const float gz_deg_s = gz_rad_s * 180.0f / PI;
+        // Note: sign chosen so positive gyro Z matches positive yaw change.
+        yaw_pred = wrap360(yaw_pred - gz_deg_s * dt);
+        // Gyro-only yaw integrates the same gyro rate but never gets mag correction.
+        _yawGyro_deg = wrap360(_yawGyro_deg - gz_deg_s * dt);
+    }
+
+    // 2) Correct with magnetometer (complementary)
+    if (haveMag)
+    {
+        const float err = angleDiffDeg(mag_heading_deg, yaw_pred);
+        // Equivalent to: yaw = alpha*yaw_pred + (1-alpha)*mag, but done via shortest-angle correction.
+        _yaw_deg = wrap360(yaw_pred + (1.0f - _yawAlpha) * err);
+    }
+    else
+    {
+        _yaw_deg = yaw_pred;
+    }
 }
 
 void IMU::getAccel_raw(float *ax, float *ay, float *az)

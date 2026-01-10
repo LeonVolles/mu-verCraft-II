@@ -64,6 +64,11 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 // *************************************************
 
 // *************************************************
+// Gyro/IMU/Complementary filter settings
+// *************************************************
+extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter alpha, high = trust gyro more
+
+// *************************************************
 // Control loop constants
 // *************************************************
 // extern const float f_loop;          // Hz
@@ -85,5 +90,8 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 
 // IR sensor distance a (equilateral triangle side length)
 extern const float global_IRSensorDistance_a_meters;
+
+// IR-line sensor thresholds
+extern const float global_IRSensor_Threshold;
 
 #endif // HOVERCRAFT_VARIABLES_H

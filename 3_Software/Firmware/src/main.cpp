@@ -29,7 +29,7 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
 
 // IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
-IMU imu;
+IMU imu(global_ComplementaryFilter_yawAlpha);
 
 // IR Line Sensors
 IRSensors irSensors(IR1_PIN, IR2_PIN, IR3_PIN, global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
@@ -63,13 +63,13 @@ void task_blink(void *parameter)
   for (;;)
   { // Infinite loop
     digitalWrite(LED_PIN, HIGH);
-    Serial.println("task_blink: LED ON");
+    //   Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
     digitalWrite(LED_PIN, LOW);
-    Serial.println("task_blink: LED OFF");
+    //   Serial.println("task_blink: LED OFF");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    Serial.print("task_blink running on core ");
-    Serial.println(xPortGetCoreID());
+    //   Serial.print("task_blink running on core ");
+    //   Serial.println(xPortGetCoreID());
   }
 }
 
@@ -105,6 +105,10 @@ void task_imu(void *parameter)
   Serial.printf("[IMU] ready=%d accel=%d gyro=%d mag=%d baro=%d\n",
                 (int)imu.isReady(), (int)imu.hasAccel(), (int)imu.hasGyro(), (int)imu.hasMag(), (int)imu.hasBaro());
 
+  // Yaw complementary filter: mostly gyro, slow magnetometer correction
+  imu.setYawFilterAlpha(global_ComplementaryFilter_yawAlpha);
+  imu.resetYawToMag();
+
   // Optional: calibrate accel reference (keep craft still + level for ~1s)
   if (imu.hasAccel())
   {
@@ -129,11 +133,20 @@ void task_imu(void *parameter)
     imu.getMag_raw(&mx, &my, &mz, &head);
     imu.getEnv(&tempC, &pres);
 
+    // Update yaw estimate (gyro+mag complementary filter) using the same gyro/mag values we just read
+    imu.updateYawComplementaryFrom(gz, head);
+    const float yaw_PureCompass = head;
+    const float yaw_PureGyro = imu.getYawGyro_deg();
+    const float yaw_Complementary = imu.getYaw_deg();
+
     // Rate-limited debug output (SerialPlot friendly)
-    Serial.printf("ax:%.2f ay:%.2f az:%.2f gx:%.3f gy:%.3f gz:%.3f mx:%d my:%d mz:%d head:%.1f t:%.2f p:%.2f\n",
+    Serial.printf("ax:%.2f ay:%.2f az:%.2f gx:%.3f gy:%.3f gz:%.3f mx:%d my:%d mz:%d yaw_PureCompass:%.1f yaw_PureGyro:%.1f yaw_Complementary:%.1f t:%.2f p:%.2f\n",
                   ax, ay, az,
                   gx, gy, gz,
-                  (int)mx, (int)my, (int)mz, head,
+                  (int)mx, (int)my, (int)mz,
+                  yaw_PureCompass,
+                  yaw_PureGyro,
+                  yaw_Complementary,
                   tempC, pres);
 
     vTaskDelayUntil(&lastWake, period);
@@ -185,7 +198,7 @@ void task_irSensors(void *parameter)
 
       // For now: Debug output.
       // Later: Send this to a Navigation/Control Queue.
-      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+      //   Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
     }
 
     // Polling interval. Since line crossings are short events handled by ISRs,
@@ -200,8 +213,8 @@ void task_batteryMonitor(void *parameter)
   for (;;)
   {
     // Placeholder for battery monitoring code
-    Serial.print("task_batteryMonitor running on core ");
-    Serial.println(xPortGetCoreID());
+    //   Serial.print("task_batteryMonitor running on core ");
+    //   Serial.println(xPortGetCoreID());
     vTaskDelay(3000 / portTICK_PERIOD_MS);
   }
 }

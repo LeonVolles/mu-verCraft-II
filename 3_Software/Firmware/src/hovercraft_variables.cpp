@@ -34,6 +34,11 @@ bool global_MotorsReversedBR = true;  // Back Right motor reversed
 // *************************************************
 
 // *************************************************
+// Gyro/IMU/Complementary filter settings
+// *************************************************
+const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more
+
+// *************************************************
 // Control loop constants (example, if you enable them)
 // *************************************************
 // const float f_loop = 100.0f;          // Hz
@@ -51,7 +56,7 @@ bool global_MotorsReversedBR = true;  // Back Right motor reversed
 // Dimensions
 // *************************************************
 // IR Sensor distance a (actual definition)
-const float global_IRSensorDistance_a_meters = 1; // TODOOOO!! distance between neighboring IR-sensors (hypothese of an equilateral triangle with side length a)
+const float global_IRSensorDistance_a_meters = 1.0f; // TODO: distance between neighboring IR-sensors (equilateral triangle side length a)
 
 // sensor positions
 // motor positions
