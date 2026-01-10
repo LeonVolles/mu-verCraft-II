@@ -1,30 +1,98 @@
-// #ifndef IR_SENSORS_H
-// #define IR_SENSORS_H
+#ifndef IR_SENSORS_H
+#define IR_SENSORS_H
 
-// #include <Arduino.h>
+#include <Arduino.h>
 
-// class IRSensors {
-// private:
-//     int pinLeft;
-//     int pinRight;
-//     int pinFront;
-//     float distanceLeft;
-//     float distanceRight;
-//     float distanceFront;
-    
-// public:
-//     IRSensors();
-    
-//     // Initialization
-//     void init();
-    
-//     // Update sensor readings (call in main loop)
-//     void update();
-    
-//     // Get distance measurements in cm
-//     float getDistanceLeft();
-//     float getDistanceRight();
-//     float getDistanceFront();
-// };
+// OVERVIEW:
+// This class handles three infrared line sensors mounted around the hovercraft.
+// It:
+// 1) captures precise timestamps (micros) when each sensor crosses a line,
+// 2) computes the time differences dt*_x needed for angle estimation,
+// 3) estimates the angle between hovercraft and line (alpha),
+// 4) estimates the hovercraft velocity component perpendicular to the line,
+// 5) stores the last valid angle and velocity for later readout via getters.
+//
+// Assumptions:
+// - Sensors form an equilateral triangle around the center with side length a.
+// - Hovercraft does not yaw significantly during one line crossing.
+// - All three sensors detect the same line within a short time window.
 
-// #endif // IR_SENSORS_H
+class IRSensors
+{
+public:
+    // Constructor: you must pass sensor pins and sensor distance a (meters).
+    IRSensors(int pin1, int pin2, int pin3, float sensorDistance);
+
+    // Initialize pins and attach interrupts. Must be called in setup().
+    void begin();
+
+    // Returns last computed angle (degrees) between hovercraft heading
+    // and the line. Returns NAN if no valid measurement has been computed.
+    float getAlphaToLine() const;
+
+    // Returns last computed velocity perpendicular to the line (m/s).
+    // Returns NAN if no valid measurement has been computed.
+    float getVelocityPerpToLine() const;
+
+    // Returns true if a new complete measurement (angle + velocity)
+    // has been computed since the last call to consumeNewMeasurement().
+    bool hasNewMeasurement() const;
+
+    // Call this after reading angle/velocity to clear the "new data" flag.
+    void consumeNewMeasurement();
+
+private:
+    // Pins for the three IR sensors.
+    int _pin1;
+    int _pin2;
+    int _pin3;
+
+    // Distance between neighboring sensors (meters).
+    float _a;
+
+    // Last computed angle (degrees) and perpendicular velocity (m/s).
+    float _lastAlphaDeg;
+    float _lastVelPerp;
+    bool _hasNewMeasurement;
+
+    // Raw timestamps (micros) when each sensor detected the line.
+    volatile uint32_t _t1_us;
+    volatile uint32_t _t2_us;
+    volatile uint32_t _t3_us;
+
+    // Flags to indicate which sensors have already been triggered
+    // for the current crossing.
+    volatile bool _t1_valid;
+    volatile bool _t2_valid;
+    volatile bool _t3_valid;
+
+    // Time window (microseconds) within which all three sensors must
+    // fire to be considered a valid single crossing event.
+    static constexpr uint32_t CROSSING_TIMEOUT_US = 5000; // ~5 ms
+
+    // Timestamp of the first trigger in the current crossing.
+    volatile uint32_t _crossingStart_us;
+
+    // Internal helpers
+    static float clamp1(float v);
+    static float normalizeDeg(float a);
+    static float computeAlphaFromDt(float dt12_x, float dt13_x, float dt23_x);
+    static float computeVelocityPerpToLine(float alphaDeg,
+                                           float a,
+                                           float dt12,
+                                           float dt13,
+                                           float dt23);
+
+    // Called from ISRs when a sensor sees a line.
+    void handleSensorTrigger(uint8_t sensorIndex, uint32_t t_us);
+
+    // Static ISR trampolines required by attachInterrupt().
+    static void isrSensor1Trampoline();
+    static void isrSensor2Trampoline();
+    static void isrSensor3Trampoline();
+
+    // Pointer to the single global instance used by ISRs.
+    static IRSensors *_instance;
+};
+
+#endif // IR_SENSORS_H

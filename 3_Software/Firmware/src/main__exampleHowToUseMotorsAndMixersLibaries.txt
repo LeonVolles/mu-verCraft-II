@@ -1,0 +1,60 @@
+#include <Arduino.h>
+
+// Include file for all global variables
+#include "hovercraft_variables.h"
+
+// Include all subsystem headers
+#include <motor_ctrl.h>
+#include <motor_mixer.h>
+// #include <imu.h>
+#include <wifi_manager.h>
+#include <network_piloting.h>
+#include <ir_sensors.h>
+#include <battery_monitor.h>
+#include <pid_controller.h>
+#include <camera_placeholder.h>
+
+// RTOS includes
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+// Motor controller with global power scaler, defined in hovercraft_variables.h!!
+MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduces the max power to avoid smoking motors, adjust depending on kV of motors
+
+// Mixer that uses the motor controller
+MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(1000);
+
+  // Init motors
+  // Args: fl_pin, fr_pin, bl_pin, br_pin,
+  //       reversedFL, reversedFR, reversedBL, reversedBR
+  // FL and BR are inverted (true)
+  motorCtrl.init(
+      global_PIN_MOTOR_FL,
+      global_PIN_MOTOR_FR,
+      global_PIN_MOTOR_BL,
+      global_PIN_MOTOR_BR,
+      global_MotorsReversedFL, // reversed FL
+      global_MotorsReversedFR, // reversed FR
+      global_MotorsReversedBL, // reversed BL
+      global_MotorsReversedBR  // reversed BR
+  );
+
+  // Init mixer (currently empty, but keeps API consistent)
+  motorMixer.init();
+
+  // Set mixer inputs
+  motorMixer.setLift(40.0f);       // 40 percent lift
+  motorMixer.setDiffThrust(10.0f); // 10 percent balance
+  motorMixer.setThrust(25.0f);     // 25 percent thrust
+}
+
+void loop()
+{
+  // Nothing to do here for now
+  // Motors keep the last values set by the mixer
+}
