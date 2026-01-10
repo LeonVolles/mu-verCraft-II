@@ -246,7 +246,10 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 							</div>
 						</div>
 					</div>
-					<div class="placeholder"></div>
+					<div class="placeholder" id="camBox">
+						<div id="camStatus" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;">Camera: checking...</div>
+						<img id="camStream" alt="Camera stream" style="width:100%;height:100%;object-fit:cover;display:none;" />
+					</div>
 				</div>
 			</div>
 		</div>
@@ -258,6 +261,8 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		const wsDot = document.getElementById('wsDot');
 		const armBtn = document.getElementById('armBtn');
 		const liftBtn = document.getElementById('liftBtn');
+		const camStream = document.getElementById('camStream');
+		const camStatus = document.getElementById('camStatus');
 
 		let ws;
 		let sendPending = false;
@@ -266,6 +271,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		let steerActive = false;
 		const LIFT_PRESET = 60; // percent lift when toggle is on
 		let liftToggle = false;
+		let cameraOk = false;
 
 		function updateLabels() {
 			armBtn.textContent = state.motorsEnabled ? 'Motors ON' : 'Motors OFF';
@@ -292,6 +298,30 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		function setStatus(text, ok) {
 			wsStatus.textContent = text;
 			wsDot.classList.toggle('ok', ok);
+		}
+
+		function setupCamera() {
+			fetch('/api/camera/status')
+				.then((resp) => {
+					cameraOk = resp.ok;
+					return resp.json().catch(() => ({ available: false }));
+				})
+				.then((data) => {
+					if (cameraOk && data.available) {
+						camStatus.style.display = 'none';
+						camStream.style.display = 'block';
+						camStream.src = '/stream';
+					} else {
+						camStatus.textContent = 'Camera not detected';
+						camStatus.style.display = 'flex';
+						camStream.style.display = 'none';
+					}
+				})
+				.catch(() => {
+					camStatus.textContent = 'Camera status unavailable';
+					camStatus.style.display = 'flex';
+					camStream.style.display = 'none';
+				});
 		}
 
 		function connectWs() {
@@ -383,6 +413,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		});
 
 		updateLabels();
+		setupCamera();
 		connectWs();
 	</script>
 </body>
@@ -436,6 +467,11 @@ void NetworkPiloting::setSteeringCallback(const std::function<void(float)> &call
 void NetworkPiloting::setArmCallback(const std::function<void(bool)> &callback)
 {
 	onArm_ = callback;
+}
+
+AsyncWebServer &NetworkPiloting::server()
+{
+	return server_;
 }
 
 float NetworkPiloting::getLift() const

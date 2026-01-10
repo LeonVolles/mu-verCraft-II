@@ -31,6 +31,7 @@ MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor control
 // Network + WiFi helpers
 WifiManager wifiManager;
 NetworkPiloting networkPiloting;
+CameraPlaceholder camera;
 // http://192.168.4.1/
 static const char *AP_SSID = "µ-verCraft-II AP";
 static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
@@ -250,6 +251,9 @@ void setup()
     }
     Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
   });
+
+  // Initialize camera once; if it fails, system continues without video
+  camera.begin(networkPiloting.server());
 
   networkPiloting.begin();
 

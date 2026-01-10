@@ -56,6 +56,7 @@ public:
 	void setThrustCallback(const std::function<void(float)> &callback);
 	void setSteeringCallback(const std::function<void(float)> &callback);
 	void setArmCallback(const std::function<void(bool)> &callback);
+	AsyncWebServer &server();
 	float getLift() const;
 	float getThrust() const;
 	float getSteering() const;

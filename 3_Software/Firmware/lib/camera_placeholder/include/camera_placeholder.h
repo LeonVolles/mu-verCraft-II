@@ -1,22 +1,23 @@
-// #ifndef CAMERA_PLACEHOLDER_H
-// #define CAMERA_PLACEHOLDER_H
+#pragma once
 
-// #include <Arduino.h>
+#include <Arduino.h>
+#include <ESPAsyncWebServer.h>
 
-// class CameraPlaceholder {
-// private:
-//     bool running;
-    
-// public:
-//     CameraPlaceholder();
-    
-//     // Initialization
-//     void init();
-    
-//     // Camera control
-//     void start();
-//     void stop();
-//     bool isRunning();
-// };
+class CameraPlaceholder
+{
+public:
+	CameraPlaceholder();
 
-// #endif // CAMERA_PLACEHOLDER_H
+	// Initialize camera and register HTTP endpoints (/stream and /api/camera/status).
+	// Returns true if the camera was detected and initialized.
+	bool begin(AsyncWebServer &server);
+
+	bool isAvailable() const;
+
+private:
+	bool cameraAvailable_;
+	volatile bool streamActive_;
+
+	// Internal helpers
+	void registerHttpEndpoints(AsyncWebServer &server);
+};
