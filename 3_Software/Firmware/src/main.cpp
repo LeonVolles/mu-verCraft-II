@@ -41,8 +41,10 @@ struct ControlSetpoints
   float lift;
   float thrust;
   float diffThrust;
+  bool motorsEnabled;
 };
 QueueHandle_t g_controlQueue = nullptr;
+static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false};
 
 // **************************************************
 // DEFINE/DECLARE ALL TASK HANDLES
@@ -64,13 +66,13 @@ void task_blink(void *parameter)
   for (;;)
   { // Infinite loop
     digitalWrite(LED_PIN, HIGH);
-    Serial.println("task_blink: LED ON");
+    //Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
     digitalWrite(LED_PIN, LOW);
-    Serial.println("task_blink: LED OFF");
+    //Serial.println("task_blink: LED OFF");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    Serial.print("task_blink running on core ");
-    Serial.println(xPortGetCoreID());
+    //Serial.print("task_blink running on core ");
+    //Serial.println(xPortGetCoreID());
   }
 }
 
@@ -101,8 +103,8 @@ void task_imu(void *parameter)
   for (;;)
   {
     // Placeholder for IMU handling code
-    Serial.print("task_imu running on core ");
-    Serial.println(xPortGetCoreID());
+    //Serial.print("task_imu running on core ");
+    //Serial.println(xPortGetCoreID());
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
@@ -111,7 +113,7 @@ void task_motorManagement(void *parameter)
 {
   MotorMixer *mixer = static_cast<MotorMixer *>(parameter);
 
-  ControlSetpoints mySetPoint{0, 0, 0};
+  ControlSetpoints mySetPoint{0, 0, 0, false};
 
   for (;;)
   {
@@ -125,9 +127,18 @@ void task_motorManagement(void *parameter)
     }
 
     // Apply whatever values are in mySetPoint (last known setpoints)
-    mixer->setLift(mySetPoint.lift);
-    mixer->setDiffThrust(mySetPoint.diffThrust);
-    mixer->setThrust(mySetPoint.thrust);
+    if (!mySetPoint.motorsEnabled)
+    {
+      mixer->setLift(0.0f);
+      mixer->setDiffThrust(0.0f);
+      mixer->setThrust(0.0f);
+    }
+    else
+    {
+      mixer->setLift(mySetPoint.lift);
+      mixer->setDiffThrust(mySetPoint.diffThrust);
+      mixer->setThrust(mySetPoint.thrust);
+    }
 
     vTaskDelay(20 / portTICK_PERIOD_MS);
   }
@@ -138,8 +149,8 @@ void task_irSensors(void *parameter)
   for (;;)
   {
     // Placeholder for IR sensor handling code
-    Serial.print("task_irSensors running on core ");
-    Serial.println(xPortGetCoreID());
+    //Serial.print("task_irSensors running on core ");
+    //Serial.println(xPortGetCoreID());
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
@@ -149,8 +160,8 @@ void task_batteryMonitor(void *parameter)
   for (;;)
   {
     // Placeholder for battery monitoring code
-    Serial.print("task_batteryMonitor running on core ");
-    Serial.println(xPortGetCoreID());
+    //Serial.print("task_batteryMonitor running on core ");
+    //Serial.println(xPortGetCoreID());
     vTaskDelay(3000 / portTICK_PERIOD_MS);
   }
 }
@@ -199,13 +210,47 @@ void setup()
   wifiManager.startAccessPoint(AP_SSID, AP_PASSWORD);
 
   networkPiloting.setLiftCallback([](float liftPercent) {
+    g_latestSetpoints.lift = liftPercent;
     if (g_controlQueue != nullptr)
     {
-      ControlSetpoints setpoints{liftPercent, 0.0f, 0.0f};
-      xQueueOverwrite(g_controlQueue, &setpoints);
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
     }
     Serial.printf("Lift=%.1f%%\n", liftPercent);
   });
+
+  networkPiloting.setThrustCallback([](float thrustPercent) {
+    g_latestSetpoints.thrust = thrustPercent;
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Thrust=%.1f%%\n", thrustPercent);
+  });
+
+  networkPiloting.setSteeringCallback([](float steeringPercent) {
+    g_latestSetpoints.diffThrust = steeringPercent;
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Steering=%.1f%%\n", steeringPercent);
+  });
+
+  networkPiloting.setArmCallback([](bool enabled) {
+    g_latestSetpoints.motorsEnabled = enabled;
+    if (!enabled)
+    {
+      g_latestSetpoints.lift = 0.0f;
+      g_latestSetpoints.thrust = 0.0f;
+      g_latestSetpoints.diffThrust = 0.0f;
+    }
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
+  });
+
   networkPiloting.begin();
 
   // **************************************************

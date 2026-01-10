@@ -1,4 +1,4 @@
-#include "network_piloting.h"
+// #include "network_piloting.h"
 
 // NetworkPiloting::NetworkPiloting() {
 //     // TODO: Initialize member variables
@@ -6,10 +6,6 @@
 
 // NetworkPiloting::~NetworkPiloting() {
 //     // TODO: Cleanup resources
-// }
-
-// void NetworkPiloting::init() {
-//     // TODO: Initialize network piloting
 // }
 
 // void NetworkPiloting::startServer() {
@@ -21,40 +17,11 @@
 // }
 
 // void NetworkPiloting::setTargetThrust(float v) {
-//     // TODO: Set target thrust value
-// }
-
-// void NetworkPiloting::setTargetSteering(float v) {
-//     // TODO: Set target steering value
-// }
-
-// float NetworkPiloting::getTargetThrust() {
-//     // TODO: Return target thrust
-//     return 0.0;
-// }
-
-// float NetworkPiloting::getTargetSteering() {
-//     // TODO: Return target steering
-//     return 0.0;
-// }
-
-// void NetworkPiloting::setArmed(bool v) {
-//     // TODO: Set armed state
-// }
-
-// bool NetworkPiloting::isArmed() {
-//     // TODO: Return armed state
-//     return false;
-// }
-
-
 #include "network_piloting.h"
+#include <pgmspace.h>
 
-namespace
-{
-// Controller HTML served from flash; also written to lib/website/controller.html for easier editing.
-// WebSocket endpoint: /ws
-const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
+// Embedded controller page so no external filesystem is required
+static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -63,190 +30,366 @@ const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 	<title>Hovercraft Control</title>
 	<style>
 		:root {
-			--bg: #0b1724;
-			--panel: #12263a;
-			--accent: #2ec4b6;
-			--accent-2: #ff9f1c;
-			--text: #e8eef4;
-			--muted: #7c8ca5;
-			--shadow: rgba(0, 0, 0, 0.35);
+			--bg: #040b14;
+			--panel: #0e1b2a;
+			--accent: #39c0ff;
+			--accent-2: #7cf29c;
+			--warn: #ff5c5c;
+			--text: #f1f6ff;
+			--muted: #8ea2c2;
+			--shadow: rgba(0, 0, 0, 0.45);
 		}
 		* { box-sizing: border-box; }
 		body {
 			margin: 0;
 			font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-			background: radial-gradient(circle at 20% 20%, rgba(46, 196, 182, 0.08), transparent 30%),
-									radial-gradient(circle at 80% 10%, rgba(255, 159, 28, 0.08), transparent 25%),
-									radial-gradient(circle at 50% 80%, rgba(46, 196, 182, 0.06), transparent 30%),
-									var(--bg);
+			background: #02060c;
 			color: var(--text);
 			min-height: 100vh;
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			padding: 24px;
+			padding: 0;
 		}
 		.card {
-			width: min(520px, 100%);
-			background: var(--panel);
-			border-radius: 16px;
-			box-shadow: 0 18px 35px var(--shadow);
-			padding: 24px;
-			border: 1px solid rgba(255, 255, 255, 0.04);
+			position: relative;
+			width: 100%;
+			max-width: 1200px;
+			background: transparent;
+			border-radius: 0;
+			box-shadow: none;
+			padding: 12px;
+			border: none;
 		}
-		h1 {
-			margin: 0 0 6px;
-			font-weight: 700;
-			letter-spacing: 0.2px;
+		.topbar {
+			display: grid;
+			grid-template-columns: auto auto auto auto auto;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 12px;
 		}
-		.subtitle {
-			margin: 0 0 18px;
+		.status {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
 			color: var(--muted);
 			font-size: 14px;
+			justify-content: center;
 		}
-		.slider-row {
-			margin-top: 18px;
-			padding: 16px;
-			background: rgba(255, 255, 255, 0.02);
+		.metric {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 8px 12px;
 			border-radius: 12px;
-			border: 1px solid rgba(255, 255, 255, 0.04);
-		}
-		label { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
-		.value-pill {
-			padding: 6px 10px;
-			border-radius: 999px;
-			background: rgba(46, 196, 182, 0.12);
-			color: var(--accent);
-			font-variant-numeric: tabular-nums;
+			background: rgba(255,255,255,0.04);
+			border: 1px solid rgba(255,255,255,0.06);
+			color: var(--text);
 			font-size: 13px;
-			border: 1px solid rgba(46, 196, 182, 0.22);
+			min-width: 120px;
+			justify-content: center;
 		}
-		input[type=range] {
+		.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 6px rgba(255,92,92,0.12); }
+		.dot.ok { background: #3ed598; box-shadow: 0 0 0 6px rgba(62,213,152,0.18); }
+		.lift-btn,
+		.arm-btn {
+			border: 1px solid rgba(255,255,255,0.08);
+			background: linear-gradient(135deg, #15314b, #0f2336);
+			color: var(--text);
+			padding: 10px 16px;
+			border-radius: 12px;
+			font-weight: 700;
+			letter-spacing: 0.2px;
+			cursor: pointer;
+			transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+			box-shadow: 0 10px 18px rgba(0,0,0,0.25);
+		}
+		.lift-btn.on,
+		.arm-btn.on { background: linear-gradient(135deg, #18c27a, #0fa35f); box-shadow: 0 12px 24px rgba(24,194,122,0.25); }
+		.lift-btn.off,
+		.arm-btn.off { background: linear-gradient(135deg, #b32424, #7d1818); border-color: rgba(255,92,92,0.4); box-shadow: 0 12px 24px rgba(255,92,92,0.2); }
+		.lift-btn:active,
+		.arm-btn:active { transform: translateY(1px); }
+		.grid {
+			display: grid;
+			grid-template-columns: 1fr;
+			grid-template-rows: auto;
+			gap: 14px;
+			align-items: stretch;
+		}
+		.panel {
+			background: rgba(255,255,255,0.03);
+			border: 1px solid rgba(255,255,255,0.05);
+			border-radius: 16px;
+			padding: 12px;
+			height: 100%;
+		}
+		.panel.view { position: relative; }
+		.label-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+		.value-pill { padding: 5px 10px; border-radius: 999px; background: rgba(57,192,255,0.14); color: #7cf29c; font-variant-numeric: tabular-nums; border: 1px solid rgba(124,242,156,0.25); }
+		.range {
 			width: 100%;
-			margin: 14px 0 6px;
+			margin: 12px 0 4px;
 			-webkit-appearance: none;
-			height: 6px;
+			height: 7px;
 			background: linear-gradient(90deg, var(--accent), var(--accent-2));
-			border-radius: 10px;
+			border-radius: 12px;
 			outline: none;
 			box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
 		}
-		input[type=range]::-webkit-slider-thumb {
+		.range::-webkit-slider-thumb {
 			-webkit-appearance: none;
 			appearance: none;
-			width: 22px;
-			height: 22px;
-			background: #fff;
+			width: 24px;
+			height: 24px;
+			background: #0b1321;
 			border-radius: 50%;
 			border: 3px solid var(--accent);
-			box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+			box-shadow: 0 5px 12px rgba(0,0,0,0.28);
 			cursor: pointer;
 			transition: transform 80ms ease;
 		}
-		input[type=range]:active::-webkit-slider-thumb { transform: scale(1.05); }
-		.status {
-			display: flex;
-			gap: 8px;
-			align-items: center;
-			margin-top: 12px;
-			font-size: 14px;
-			color: var(--muted);
+		.range:active::-webkit-slider-thumb { transform: scale(1.05); }
+		.vertical-wrap { display: flex; justify-content: center; align-items: center; height: 100%; }
+		.vertical-range { writing-mode: bt-lr; transform: rotate(-90deg); width: 260px; height: 42px; }
+		.placeholder {
+			position: relative;
+			width: 100%;
+			height: 180px;
+			background: linear-gradient(135deg, rgba(57,192,255,0.08), rgba(14,27,42,0.9));
+			border: 1px dashed rgba(124,242,156,0.35);
+			border-radius: 14px;
+			overflow: hidden;
 		}
-		.dot { width: 10px; height: 10px; border-radius: 50%; background: #f25f4c; box-shadow: 0 0 0 6px rgba(242,95,76,0.15); }
-		.dot.ok { background: #2ec4b6; box-shadow: 0 0 0 6px rgba(46,196,182,0.18); }
-		.footer { margin-top: 16px; font-size: 13px; color: var(--muted); }
+		.thrust-overlay {
+			position: absolute;
+			top: 50%;
+			left: 12px;
+			transform: translateY(-50%);
+			width: 94px;
+			height: 180px;
+			display: flex;
+			align-items: center;
+			z-index: 3;
+		}
+		.thrust-overlay .panel {
+			width: 100%;
+			height: 100%;
+			background: rgba(14,27,42,0.5);
+			backdrop-filter: blur(10px);
+			border: 1px solid rgba(255,255,255,0.08);
+		}
+		.steer-overlay {
+			position: absolute;
+			top: 50%;
+			right: 12px;
+			transform: translateY(-50%);
+			width: 180px;
+			height: 180px;
+			display: flex;
+			align-items: center;
+			z-index: 3;
+		}
+		.steer-overlay .panel {
+			width: 100%;
+			height: 100%;
+			background: rgba(14,27,42,0.5);
+			backdrop-filter: blur(10px);
+			border: 1px solid rgba(255,255,255,0.08);
+		}
+		.range.steer-range {
+			background: linear-gradient(90deg, rgba(255,255,255,0.15), rgba(255,255,255,0.15));
+			box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+			writing-mode: horizontal-tb;
+			width: 180px;
+			height: 42px;
+			transform: none;
+		}
+		.range.steer-range::-webkit-slider-thumb {
+			background: rgba(255,255,255,0.6);
+			border: 3px solid rgba(255,255,255,0.65);
+		}
+		.range.thrust-range {
+			background: linear-gradient(90deg, rgba(255,255,255,0.15), rgba(255,255,255,0.15));
+			box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+		}
+		.range.thrust-range::-webkit-slider-thumb {
+			background: rgba(255,255,255,0.6);
+			border: 3px solid rgba(255,255,255,0.65);
+		}
+		.footer { margin-top: 12px; color: var(--muted); font-size: 12px; text-align: center; }
 	</style>
 </head>
 <body>
-	<div class="card">
-		<h1>Hovercraft Control</h1>
-		<p class="subtitle">Live lift control (0-100%). Values stream over WebSocket.</p>
-
-		<div class="slider-row">
-			<label for="lift">Lift <span class="value-pill" id="liftVal">0%</span></label>
-			<input id="lift" type="range" min="0" max="100" step="1" value="0" />
+		<div class="card">
+			<div class="footer" style="margin-bottom:8px; text-align:center;">Keep this page open while piloting. Motors default OFF and will auto-off on disconnect.</div>
+			<div class="topbar">
+				<button id="liftBtn" class="lift-btn off" style="justify-self:flex-start;">Lift OFF</button>
+				<div class="metric" id="metricBatt">Batt: --.- V</div>
+				<div class="status" style="justify-self:center;"><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span></div>
+				<div class="metric" id="metricCurrent">Current: --.- A</div>
+				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
+			</div>
+			<div class="grid">
+				<div class="panel view">
+					<div class="thrust-overlay">
+						<div class="panel thrust">
+							<div class="vertical-wrap">
+								<input id="thrust" class="range vertical-range thrust-range" type="range" min="-100" max="100" step="1" value="0" />
+							</div>
+						</div>
+					</div>
+					<div class="steer-overlay">
+						<div class="panel steer">
+							<div class="vertical-wrap">
+								<input id="steer" class="range steer-range" type="range" min="-100" max="100" step="1" value="0" />
+							</div>
+						</div>
+					</div>
+					<div class="placeholder"></div>
+				</div>
+			</div>
 		</div>
-
-		<div class="status">
-			<div id="wsDot" class="dot"></div>
-			<span id="wsStatus">Connecting...</span>
-		</div>
-		<div class="footer">Keep this tab open while piloting.</div>
-	</div>
 
 	<script>
-		const lift = document.getElementById('lift');
-		const liftVal = document.getElementById('liftVal');
+		const thrust = document.getElementById('thrust');
+		const steer = document.getElementById('steer');
 		const wsStatus = document.getElementById('wsStatus');
 		const wsDot = document.getElementById('wsDot');
+		const armBtn = document.getElementById('armBtn');
+		const liftBtn = document.getElementById('liftBtn');
 
 		let ws;
 		let sendPending = false;
-		let latestValue = lift.value;
+		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false };
+		let thrustActive = false;
+		let steerActive = false;
+		const LIFT_PRESET = 60; // percent lift when toggle is on
+		let liftToggle = false;
+
+		function updateLabels() {
+			armBtn.textContent = state.motorsEnabled ? 'Motors ON' : 'Motors OFF';
+			armBtn.classList.toggle('on', state.motorsEnabled);
+			armBtn.classList.toggle('off', !state.motorsEnabled);
+			const liftIsOn = Math.abs(state.lift - LIFT_PRESET) < 0.5;
+			liftToggle = liftIsOn;
+			liftBtn.textContent = liftToggle ? 'Lift ON' : 'Lift OFF';
+			liftBtn.classList.toggle('on', liftToggle);
+			liftBtn.classList.toggle('off', !liftToggle);
+		}
+
+		function sendState(force = false) {
+			if (!ws || ws.readyState !== WebSocket.OPEN) return;
+			if (!force && sendPending) return;
+			sendPending = true;
+			const payload = JSON.stringify(state);
+			requestAnimationFrame(() => {
+				ws.send(payload);
+				sendPending = false;
+			});
+		}
+
+		function setStatus(text, ok) {
+			wsStatus.textContent = text;
+			wsDot.classList.toggle('ok', ok);
+		}
 
 		function connectWs() {
 			const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 			ws = new WebSocket(`${proto}://${location.host}/ws`);
 
 			ws.onopen = () => {
-				wsStatus.textContent = 'Connected';
-				wsDot.classList.add('ok');
-				sendValue(latestValue, true);
+				setStatus('Connected', true);
+				sendState(true);
 			};
 
 			ws.onclose = () => {
-				wsStatus.textContent = 'Reconnecting...';
-				wsDot.classList.remove('ok');
-				setTimeout(connectWs, 750);
+				setStatus('Reconnecting...', false);
+				state.motorsEnabled = false;
+				state.thrust = 0;
+				state.steering = 0;
+				state.lift = 0;
+				thrust.value = 0;
+				steer.value = 0;
+				updateLabels();
+				setTimeout(connectWs, 800);
 			};
 
 			ws.onerror = () => {
-				wsStatus.textContent = 'Error (retrying)';
-				wsDot.classList.remove('ok');
+				setStatus('Error (retrying)', false);
 			};
 
 			ws.onmessage = (evt) => {
-				// Server may echo {"lift": number}
 				try {
 					const data = JSON.parse(evt.data);
-					if (typeof data.lift === 'number') {
-						lift.value = data.lift;
-						updateLabel(data.lift);
+					if (typeof data.thrust === 'number') {
+						state.thrust = data.thrust;
+						thrust.value = data.thrust;
 					}
+					if (typeof data.steering === 'number') {
+						state.steering = data.steering;
+						steer.value = data.steering;
+					}
+					if (typeof data.motorsEnabled === 'boolean') {
+						state.motorsEnabled = data.motorsEnabled;
+						if (!state.motorsEnabled) {
+							state.lift = 0;
+							liftToggle = false;
+						}
+					}
+					updateLabels();
 				} catch (_) { /* ignore parse errors */ }
 			};
 		}
 
-		function updateLabel(val) {
-			liftVal.textContent = `${Math.round(val)}%`;
-		}
+		function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
 
-		function sendValue(val, force = false) {
-			latestValue = val;
-			if (!ws || ws.readyState !== WebSocket.OPEN) return;
-			if (!force && sendPending) return;
-			sendPending = true;
-			requestAnimationFrame(() => {
-				ws.send(JSON.stringify({ lift: Number(val) }));
-				sendPending = false;
+		function addSpringControl(el, prop) {
+			el.addEventListener('input', (e) => {
+				state[prop] = clamp(Number(e.target.value), -100, 100);
+				updateLabels();
+				sendState();
+			});
+			el.addEventListener('pointerdown', () => { if (prop === 'thrust') thrustActive = true; else steerActive = true; });
+			window.addEventListener('pointerup', () => {
+				if ((prop === 'thrust' && thrustActive) || (prop === 'steering' && steerActive)) {
+					state[prop] = 0;
+					el.value = 0;
+					if (prop === 'thrust') thrustActive = false; else steerActive = false;
+					updateLabels();
+					sendState();
+				}
 			});
 		}
 
-		lift.addEventListener('input', (e) => {
-			const val = e.target.value;
-			updateLabel(val);
-			sendValue(val);
+		addSpringControl(thrust, 'thrust');
+		addSpringControl(steer, 'steering');
+
+		armBtn.addEventListener('click', () => {
+			state.motorsEnabled = !state.motorsEnabled;
+			if (!state.motorsEnabled) {
+				state.lift = 0;
+				liftToggle = false;
+			}
+			updateLabels();
+			sendState(true);
 		});
 
-		updateLabel(lift.value);
+		liftBtn.addEventListener('click', () => {
+			liftToggle = !liftToggle;
+			state.lift = liftToggle ? LIFT_PRESET : 0;
+			updateLabels();
+			sendState(true);
+		});
+
+		updateLabels();
 		connectWs();
 	</script>
 </body>
 </html>
 )rawliteral";
-} // namespace
 
-NetworkPiloting::NetworkPiloting() : server_(80), ws_("/ws"), lift_(0.0f) {}
+NetworkPiloting::NetworkPiloting() : server_(80), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
 
 void NetworkPiloting::begin()
 {
@@ -254,17 +397,20 @@ void NetworkPiloting::begin()
 		handleWebSocketEvent(server, client, type, arg, data, len);
 	});
 
+	// Serve embedded page from flash
 	server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
 		request->send_P(200, "text/html", CONTROLLER_HTML);
 	});
-
+	server_.on("/controller.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+		request->send_P(200, "text/html", CONTROLLER_HTML);
+	});
 	server_.onNotFound([](AsyncWebServerRequest *request) {
-		request->send(404, "text/plain", "Not found");
+		request->send_P(200, "text/html", CONTROLLER_HTML);
 	});
 
 	server_.addHandler(&ws_);
 	server_.begin();
-	Serial.println("NetworkPiloting server started (WebSocket /ws)");
+	Serial.println("NetworkPiloting server started (WebSocket /ws, embedded controller page)");
 }
 
 void NetworkPiloting::loop()
@@ -277,9 +423,39 @@ void NetworkPiloting::setLiftCallback(const std::function<void(float)> &callback
 	onLift_ = callback;
 }
 
+void NetworkPiloting::setThrustCallback(const std::function<void(float)> &callback)
+{
+	onThrust_ = callback;
+}
+
+void NetworkPiloting::setSteeringCallback(const std::function<void(float)> &callback)
+{
+	onSteering_ = callback;
+}
+
+void NetworkPiloting::setArmCallback(const std::function<void(bool)> &callback)
+{
+	onArm_ = callback;
+}
+
 float NetworkPiloting::getLift() const
 {
 	return lift_;
+}
+
+float NetworkPiloting::getThrust() const
+{
+	return thrust_;
+}
+
+float NetworkPiloting::getSteering() const
+{
+	return steering_;
+}
+
+bool NetworkPiloting::motorsEnabled() const
+{
+	return motorsEnabled_;
 }
 
 void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
@@ -287,6 +463,28 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 	if (type == WS_EVT_CONNECT)
 	{
 		client->text("{\"status\":\"connected\"}");
+		return;
+	}
+
+	if (type == WS_EVT_DISCONNECT)
+	{
+		// Fail-safe: drop motors and zero controls on disconnect
+		applyArm(false);
+		if (onThrust_)
+		{
+			onThrust_(0.0f);
+		}
+		if (onSteering_)
+		{
+			onSteering_(0.0f);
+		}
+		if (onLift_)
+		{
+			onLift_(0.0f);
+		}
+		thrust_ = 0.0f;
+		steering_ = 0.0f;
+		lift_ = 0.0f;
 		return;
 	}
 
@@ -311,29 +509,82 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 			return;
 		}
 
-		float newLift = payload.substring(colonPos + 1).toFloat();
-		if (isnan(newLift))
+		// Parse fields independently (lightweight, no full JSON dep)
+		auto parseNumber = [&payload](const char *key, float &outVal, float minVal, float maxVal) {
+			int pos = payload.indexOf(key);
+			if (pos == -1) return false;
+			int cPos = payload.indexOf(':', pos);
+			if (cPos == -1) return false;
+			float val = payload.substring(cPos + 1).toFloat();
+			if (isnan(val)) return false;
+			if (val < minVal) val = minVal;
+			if (val > maxVal) val = maxVal;
+			outVal = val;
+			return true;
+		};
+
+		bool updated = false;
+		float newLift = lift_;
+		float newThrust = thrust_;
+		float newSteer = steering_;
+
+		if (parseNumber("\"lift\"", newLift, 0.0f, 100.0f))
 		{
-			return;
+			lift_ = newLift;
+			if (onLift_)
+			{
+				onLift_(lift_);
+			}
+			updated = true;
 		}
 
-		// Clamp to [0,100]
-		if (newLift < 0.0f)
+		if (parseNumber("\"thrust\"", newThrust, -100.0f, 100.0f))
 		{
-			newLift = 0.0f;
-		}
-		else if (newLift > 100.0f)
-		{
-			newLift = 100.0f;
-		}
-
-		lift_ = newLift;
-		if (onLift_)
-		{
-			onLift_(lift_);
+			thrust_ = newThrust;
+			if (onThrust_)
+			{
+				onThrust_(thrust_);
+			}
+			updated = true;
 		}
 
-		// Echo back latest value to keep UI in sync if multiple clients
-		server->textAll(String("{\"lift\":") + String(lift_, 1) + "}");
+		if (parseNumber("\"steering\"", newSteer, -100.0f, 100.0f))
+		{
+			steering_ = newSteer;
+			if (onSteering_)
+			{
+				onSteering_(steering_);
+			}
+			updated = true;
+		}
+
+		int armPos = payload.indexOf("\"motorsEnabled\"");
+		if (armPos != -1)
+		{
+			int colon = payload.indexOf(':', armPos);
+			if (colon != -1)
+			{
+				bool enable = payload.substring(colon + 1).startsWith("true");
+				applyArm(enable);
+				updated = true;
+			}
+		}
+
+		if (updated)
+		{
+			server->textAll(String("{\"lift\":") + String(lift_, 1) +
+			               ",\"thrust\":" + String(thrust_, 1) +
+			               ",\"steering\":" + String(steering_, 1) +
+			               ",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") + "}");
+		}
+	}
+}
+
+void NetworkPiloting::applyArm(bool enabled)
+{
+	motorsEnabled_ = enabled;
+	if (onArm_)
+	{
+		onArm_(motorsEnabled_);
 	}
 }
