@@ -26,7 +26,9 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 
 // Debug ramp test (matches the standalone sketch behavior)
 #define PEAKSPEED 200           // throttle between -999 and 999
+#define PEAKSPEED_PERCENT 20.0f // percent between -100.0f and 100.0f
 static int16_t motorSpeed = 0;
+static float motorSpeedPercent = 0.0f;
 static int increaseDirection = 1;
 
 void setup()
@@ -50,6 +52,12 @@ void setup()
       global_MotorsReversedBR  // flag, if BR motor is reversed or not
   );
 
+  // Start at 0 throttle (arming-safe)
+  // motorCtrl.tempForDebug_SetAll_directly(0);
+  motorCtrl.setAllPercent(0.0f, 0.0f, 0.0f, 0.0f);
+
+  delay(20);
+
   // Init mixer (currently empty, but keeps API consistent)
   //  motorMixer.init();
 
@@ -60,18 +68,14 @@ void setup()
 
   // Test single motors
   // motorCtrl.setAllPercent(25.0f, 0.0f, 0.0f, 0.0f);
-
-  // Start at 0 throttle (arming-safe)
-  motorCtrl.tempForDebug_SetAll_directly(0);
 }
 
 void loop()
 {
-  // Ramp motor speed up/down between -PEAKSPEED and +PEAKSPEED
-  motorCtrl.tempForDebug_SetAll_directly(motorSpeed);
-
-  motorSpeed += increaseDirection * 5;
-  if (motorSpeed >= PEAKSPEED || motorSpeed <= -PEAKSPEED)
+  // Test with percent control
+  motorCtrl.setAllPercent(motorSpeedPercent, motorSpeedPercent, motorSpeedPercent, motorSpeedPercent);
+  motorSpeedPercent += increaseDirection * 1.0f;
+  if (motorSpeedPercent >= PEAKSPEED_PERCENT || motorSpeedPercent <= -PEAKSPEED_PERCENT)
   {
     increaseDirection *= -1;
   }
