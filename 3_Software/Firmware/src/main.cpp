@@ -414,7 +414,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_batteryMonitor,
       "task_batteryMonitor",
-      2048, // stack size, needs to be adjusted when code is written, but probably not too big
+      4096, // stack size, needs to be adjusted when code is written, but probably not too big
       NULL,
       1,
       &taskH_batteryMonitor,
