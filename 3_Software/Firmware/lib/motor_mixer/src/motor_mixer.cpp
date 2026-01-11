@@ -38,6 +38,15 @@ void MotorMixer::setDiffThrust(float diffThrust)
     updateOutputs();
 }
 
+void MotorMixer::setLiftThrustDiff(float lift, float thrust, float diffThrust)
+{
+    // Set all three at once
+    m_lift = constrain(lift, 0.0f, 100.0f);
+    m_thrust = constrain(thrust, -100.0f, 100.0f);
+    m_diffThrustBalance = constrain(diffThrust, -100.0f, 100.0f);
+    updateOutputs();
+}
+
 float MotorMixer::getLift() const
 {
     return m_lift;

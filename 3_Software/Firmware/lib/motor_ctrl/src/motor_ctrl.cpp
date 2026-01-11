@@ -22,40 +22,41 @@ void MotorCtrl::init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gp
     // Initialize ESC for Front Left motor using provided IO pin and fixed RMT channel 0
     escFL.install(fl_pin, RMT_CHANNEL_0);
     escFL.init();
-    escFL.setReversed(pSetReversedFL);
+    escFL.setReversed(false);
     escFL.set3DMode(true);
 
     // Initialize ESC for Front Right motor using provided IO pin and fixed RMT channel 1
     escFR.install(fr_pin, RMT_CHANNEL_1);
     escFR.init();
-    escFR.setReversed(pSetReversedFR);
+    escFR.setReversed(false);
     escFR.set3DMode(true);
 
     // Initialize ESC for Back Left motor using provided IO pin and fixed RMT channel 2
     escBL.install(bl_pin, RMT_CHANNEL_2);
     escBL.init();
-    escBL.setReversed(pSetReversedBL);
+    escBL.setReversed(false);
     escBL.set3DMode(true);
 
     // Initialize ESC for Back Right motor using provided IO pin and fixed RMT channel 3
     escBR.install(br_pin, RMT_CHANNEL_3);
     escBR.init();
-    escBR.setReversed(pSetReversedBR);
+    escBR.setReversed(false);
     escBR.set3DMode(true);
 
     // Beep all ESCs to indicate successful initialization
-    for (int i = 0; i < 5; i++)
-    {
-        escFL.beep(i);
-        escFR.beep(i);
-        escBL.beep(i);
-        escBR.beep(i);
-    }
+    /*     for (int i = 0; i < 5; i++)
+        {
+            escFL.beep(i);
+            escFR.beep(i);
+            escBL.beep(i);
+            escBR.beep(i);
+        } */
 
     // Many ESCs require a brief period of *zero throttle* after init (and/or after beeps)
     // before they accept non-zero commands (arming behavior). The standalone test sketch
     // does this implicitly because it starts by sending motorSpeed=0.
-    for (int i = 0; i < 50; i++)
+    delay(100);
+    for (int i = 0; i < 500; i++)
     {
         escFL.sendThrottle3D(0);
         escFR.sendThrottle3D(0);
@@ -71,21 +72,6 @@ void MotorCtrl::init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gp
     pPercentBR = 0.0;
 }
 
-void MotorCtrl::tempForDebug_SetFL_directly(int16_t throttle)
-{
-    throttle = (int16_t)constrain((int)throttle, -999, 999);
-    escFL.sendThrottle3D(throttle);
-}
-
-void MotorCtrl::tempForDebug_SetAll_directly(int16_t throttle)
-{
-    throttle = (int16_t)constrain((int)throttle, -999, 999);
-    escFL.sendThrottle3D(throttle);
-    escFR.sendThrottle3D(throttle);
-    escBL.sendThrottle3D(throttle);
-    escBR.sendThrottle3D(throttle);
-}
-
 // Pct is in percent (-100.0 to +100.0)
 // Throttle value to the ESC is between -999 and 999
 void MotorCtrl::setFrontLeftPercent(float pct)
@@ -97,6 +83,12 @@ void MotorCtrl::setFrontLeftPercent(float pct)
 
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
+
+    // If flag "inverted" is set for this motor, invert the throttle command
+    if (pSetReversedFL)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent = -throttle_afterGeneralMotorPowerScalerPercent;
+    }
 
     // Send to ESC
     escFL.sendThrottle3D((int16_t)(throttle_afterGeneralMotorPowerScalerPercent)); // Send current throttle values to each ESC. Throttle is provided as integer.
@@ -112,6 +104,12 @@ void MotorCtrl::setFrontRightPercent(float pct)
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
 
+    // If flag "inverted" is set for this motor, invert the throttle command
+    if (pSetReversedFR)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent = -throttle_afterGeneralMotorPowerScalerPercent;
+    }
+
     // Send to ESC
     escFR.sendThrottle3D((int16_t)(throttle_afterGeneralMotorPowerScalerPercent));
 }
@@ -122,8 +120,16 @@ void MotorCtrl::setBackLeftPercent(float pct)
 
     // Rescale from -100..100% to -999..999 for DShot3D
     float throttle_on999scale = 999.0f / 100.0f * pPercentBL; // Convert percent to -999 to 999 scale
+
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
+
+    // If flag "inverted" is set for this motor, invert the throttle command
+    if (pSetReversedBL)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent = -throttle_afterGeneralMotorPowerScalerPercent;
+    }
+
     // Send to ESC
     escBL.sendThrottle3D((int16_t)(throttle_afterGeneralMotorPowerScalerPercent));
 }
@@ -138,7 +144,12 @@ void MotorCtrl::setBackRightPercent(float pct)
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
 
-    Serial.println("BR Throttle: " + String(throttle_afterGeneralMotorPowerScalerPercent) + " Int16 value: " + String((int16_t)(throttle_afterGeneralMotorPowerScalerPercent)));
+    // If flag "inverted" is set for this motor, invert the throttle command
+    if (pSetReversedBR)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent = -throttle_afterGeneralMotorPowerScalerPercent;
+    }
+
     // Send to ESC
     escBR.sendThrottle3D((int16_t)(throttle_afterGeneralMotorPowerScalerPercent));
 }

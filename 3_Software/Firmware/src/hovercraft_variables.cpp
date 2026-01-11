@@ -45,9 +45,9 @@ const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should sto
 // *************************************************
 const float global_AllMotorsScalePercent = 40.0f; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 
-bool global_MotorsReversedFL = false; // Flag: if true, all Front Left motor commands are reversed
+bool global_MotorsReversedFL = true;  // Flag: if true, all Front Left motor commands are reversed
 bool global_MotorsReversedFR = false; // Flag: if true, all Front Right motor commands are reversed
-bool global_MotorsReversedBL = false; // Flag: if true, all Back Left motor commands are reversed
+bool global_MotorsReversedBL = true;  // Flag: if true, all Back Left motor commands are reversed
 bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor commands are reversed
 
 // *************************************************
