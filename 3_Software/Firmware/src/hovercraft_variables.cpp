@@ -30,7 +30,7 @@ const gpio_num_t global_PIN_I2C_SCL = GPIO_NUM_6;
 // Battery related limits and variables(actual definitions)
 // *************************************************
 // Voltage divider (resistors) ratio: V_battery = V_pin * ratio
-const float global_BatteryVoltage_VoltageDividerRatio = 0.3125f; // voltage divider ratio, depends on the resistors used for voltage divider, here 100kOhm/(100kOhm+220kOhm) = 0.3125
+const float global_BatteryVoltage_VoltageDividerRatio = 0.3037f; // voltage divider ratio, depends on the resistors used for voltage divider, here 100kOhm/(100kOhm+220kOhm) = 0.3125 -> ajusted through measurement
 const float global_BatteryCurrent_VoltageDividerRatio = 1.0f;    // current sensor voltage divider ratio, if any
 
 // Betaflight-style current scale in units of [0.1 mV] / Amp.
