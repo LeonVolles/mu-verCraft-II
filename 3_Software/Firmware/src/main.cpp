@@ -28,6 +28,13 @@ MotorCtrl motorCtrl(global_AllMotorsScalePercent); // global power scaler reduce
 // Mixer that uses the motor controller
 MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor controller
 
+// Network + WiFi helpers
+WifiManager wifiManager;
+NetworkPiloting networkPiloting;
+// http://192.168.4.1/
+static const char *AP_SSID = "µ-verCraft-II AP";
+static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
+
 // IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
 IMU imu(global_ComplementaryFilter_yawAlpha);
 
@@ -46,8 +53,10 @@ struct ControlSetpoints
   float lift;
   float thrust;
   float diffThrust;
+  bool motorsEnabled;
 };
 QueueHandle_t g_controlQueue = nullptr;
+static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false};
 
 // **************************************************
 // DEFINE/DECLARE ALL TASK HANDLES
@@ -69,13 +78,13 @@ void task_blink(void *parameter)
   for (;;)
   { // Infinite loop
     digitalWrite(LED_PIN, HIGH);
-    Serial.println("task_blink: LED ON");
+    //Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
     digitalWrite(LED_PIN, LOW);
-    Serial.println("task_blink: LED OFF");
+    //Serial.println("task_blink: LED OFF");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    Serial.print("task_blink running on core ");
-    Serial.println(xPortGetCoreID());
+    //Serial.print("task_blink running on core ");
+    //Serial.println(xPortGetCoreID());
   }
 }
 
@@ -83,16 +92,19 @@ void task_wifiManager(void *parameter)
 {
   for (;;)
   {
-    // Here you would read the latest user inputs
-    ControlSetpoints mySetPoint;
-    mySetPoint.lift = 40.0f; // replace with actual values from web UI
-    mySetPoint.thrust = 25.0f;
-    mySetPoint.diffThrust = 10.0f;
+    // // Here you would read the latest user inputs
+    // ControlSetpoints mySetPoint;
+    // mySetPoint.lift = 40.0f; // replace with actual values from web UI
+    // mySetPoint.thrust = 25.0f;
+    // mySetPoint.diffThrust = 10.0f;
 
-    if (g_controlQueue != nullptr)
-    {
-      xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
-    }
+    // if (g_controlQueue != nullptr)
+    // {
+    //   xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
+    // }
+
+    // Cleanup websocket clients (Async server handles everything else)
+    networkPiloting.loop();
 
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
@@ -163,7 +175,7 @@ void task_motorManagement(void *parameter)
 {
   MotorMixer *mixer = static_cast<MotorMixer *>(parameter);
 
-  ControlSetpoints mySetPoint{0, 0, 0};
+  ControlSetpoints mySetPoint{0, 0, 0, false};
 
   for (;;)
   {
@@ -177,9 +189,18 @@ void task_motorManagement(void *parameter)
     }
 
     // Apply whatever values are in mySetPoint (last known setpoints)
-    mixer->setLift(mySetPoint.lift);
-    mixer->setDiffThrust(mySetPoint.diffThrust);
-    mixer->setThrust(mySetPoint.thrust);
+    if (!mySetPoint.motorsEnabled)
+    {
+      mixer->setLift(0.0f);
+      mixer->setDiffThrust(0.0f);
+      mixer->setThrust(0.0f);
+    }
+    else
+    {
+      mixer->setLift(mySetPoint.lift);
+      mixer->setDiffThrust(mySetPoint.diffThrust);
+      mixer->setThrust(mySetPoint.thrust);
+    }
 
     vTaskDelay(20 / portTICK_PERIOD_MS);
   }
@@ -231,6 +252,9 @@ void task_batteryMonitor(void *parameter)
                   v,
                   a,
                   mah);
+
+	// Push latest battery telemetry to all connected web clients.
+    networkPiloting.sendTelemetry(v, a, mah);
 
     // Relatively large delta_t is fine; update() integrates using millis().
     vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -302,6 +326,55 @@ void setup()
   }
 
   // **************************************************
+  // START WIFI ACCESS POINT + WEB CONTROL
+  // **************************************************
+  wifiManager.startAccessPoint(AP_SSID, AP_PASSWORD);
+
+  networkPiloting.setLiftCallback([](float liftPercent) {
+    g_latestSetpoints.lift = liftPercent;
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Lift=%.1f%%\n", liftPercent);
+  });
+
+  networkPiloting.setThrustCallback([](float thrustPercent) {
+    g_latestSetpoints.thrust = thrustPercent;
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Thrust=%.1f%%\n", thrustPercent);
+  });
+
+  networkPiloting.setSteeringCallback([](float steeringPercent) {
+    g_latestSetpoints.diffThrust = steeringPercent;
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Steering=%.1f%%\n", steeringPercent);
+  });
+
+  networkPiloting.setArmCallback([](bool enabled) {
+    g_latestSetpoints.motorsEnabled = enabled;
+    if (!enabled)
+    {
+      g_latestSetpoints.lift = 0.0f;
+      g_latestSetpoints.thrust = 0.0f;
+      g_latestSetpoints.diffThrust = 0.0f;
+    }
+    if (g_controlQueue != nullptr)
+    {
+      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+    }
+    Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
+  });
+
+  networkPiloting.begin();
+
+  // **************************************************
   // CREATE RTOS TASKS FOR EACH SUBSYSTEM
   // **************************************************
   // Test Blink Task
@@ -359,7 +432,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_batteryMonitor,
       "task_batteryMonitor",
-      2048, // stack size, needs to be adjusted when code is written, but probably not too big
+      4096, // stack size, needs to be adjusted when code is written, but probably not too big
       NULL,
       1,
       &taskH_batteryMonitor,

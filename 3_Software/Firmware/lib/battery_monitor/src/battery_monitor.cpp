@@ -87,7 +87,7 @@ void BatteryMonitor::update()
     const float vPin_mV = readPinMilliVolts(_voltageAdcPin);
     const float iPin_mV = readPinMilliVolts(_currentAdcPin);
 
-    const float vBatt_mV = vPin_mV * _voltageDividerRatio;
+    const float vBatt_mV = vPin_mV / _voltageDividerRatio;
     _voltage_V = vBatt_mV / 1000.0f;
 
     // Convert Betaflight-style scale to mV/A.
