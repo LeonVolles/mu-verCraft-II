@@ -51,7 +51,7 @@ extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should sto
 // *************************************************
 // Motor control variables
 // *************************************************
-extern float global_AllMotorsScalePercent; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+extern const float global_AllMotorsScalePercent; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 
 extern bool global_MotorsReversedFL; // Front Left motor reversed
 extern bool global_MotorsReversedFR; // Front Right motor normal

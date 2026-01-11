@@ -8,10 +8,10 @@
 const int LED_PIN = LED_BUILTIN;
 
 // Motor IO/DSHOT Pins
-const gpio_num_t global_PIN_MOTOR_FL = GPIO_NUM_8;
-const gpio_num_t global_PIN_MOTOR_FR = GPIO_NUM_7;
+const gpio_num_t global_PIN_MOTOR_FL = GPIO_NUM_7;
+const gpio_num_t global_PIN_MOTOR_FR = GPIO_NUM_43;
 const gpio_num_t global_PIN_MOTOR_BL = GPIO_NUM_44;
-const gpio_num_t global_PIN_MOTOR_BR = GPIO_NUM_43;
+const gpio_num_t global_PIN_MOTOR_BR = GPIO_NUM_8;
 
 // Battery Monitoring Pins
 const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR = GPIO_NUM_9;
@@ -43,12 +43,12 @@ const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should sto
 // *************************************************
 // Motor control variables (actual definitions)
 // *************************************************
-float global_AllMotorsScalePercent = 40.0f; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+const float global_AllMotorsScalePercent = 40.0f; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 
-bool global_MotorsReversedFL = true;  // Front Left motor reversed
-bool global_MotorsReversedFR = false; // Front Right motor normal
-bool global_MotorsReversedBL = false; // Back Left motor normal
-bool global_MotorsReversedBR = true;  // Back Right motor reversed
+bool global_MotorsReversedFL = false; // Flag: if true, all Front Left motor commands are reversed
+bool global_MotorsReversedFR = false; // Flag: if true, all Front Right motor commands are reversed
+bool global_MotorsReversedBL = false; // Flag: if true, all Back Left motor commands are reversed
+bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor commands are reversed
 
 // *************************************************
 // Wifi SSID, PW, IP Adressen (define here when needed)

@@ -25,6 +25,9 @@ public:
     // Initialization with 4 IO pins
     void init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gpio_num_t br_pin, bool setReversedFL = false, bool pSetReversedFR = false, bool pSetReversedBL = false, bool pSetReversedBR = false);
 
+    void tempForDebug_SetFL_directly(int16_t throttle);  // TEMP for debug, set FL motor directly with throttle value between -999 and 999
+    void tempForDebug_SetAll_directly(int16_t throttle); // TEMP for debug, set all motors directly with same throttle value between -999 and 999
+
     // Individual motor control (-100% to +100%)
     void setFrontLeftPercent(float pct);
     void setFrontRightPercent(float pct);

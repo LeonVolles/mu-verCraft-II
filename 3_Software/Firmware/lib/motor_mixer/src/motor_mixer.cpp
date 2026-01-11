@@ -10,7 +10,11 @@ MotorMixer::MotorMixer(MotorCtrl &motorCtrl)
 
 void MotorMixer::init()
 {
-    // No initialization needed here for now
+    // Set all motors to zero initially
+    m_lift = 0.0f;
+    m_thrust = 0.0f;
+    m_diffThrustBalance = 0.0f;
+    updateOutputs();
 }
 
 void MotorMixer::setLift(float lift)
