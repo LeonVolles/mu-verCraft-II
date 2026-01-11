@@ -4,9 +4,20 @@
 #include <Arduino.h>
 #include "driver/gpio.h" // for GPIO_NUM_X when building with Arduino-ESP32
 
+class DShotESC;
+
 class MotorCtrl
 {
 private:
+    struct KickState
+    {
+        int16_t lastSentThrottle = 0; // last throttle value sent to ESC (-999..999)
+        bool active = false;          // currently in kick phase
+        int16_t pendingDesired = 0;   // latest desired throttle while kick is active
+        int16_t kickThrottle = 0;     // throttle being used during kick phase
+        uint32_t kickStartMs = 0;     // millis() when kick started
+    };
+
     float pPercentFL;
     float pPercentFR;
     float pPercentBL;
@@ -18,6 +29,13 @@ private:
     bool pSetReversedBR;
 
     float pGeneralMotorPowerScalerPercent; // Overall power scaler (0 to 100%), this is used to prevent smoking the motors.
+
+    KickState pKickFL;
+    KickState pKickFR;
+    KickState pKickBL;
+    KickState pKickBR;
+
+    void sendThrottle3D_WithKick(DShotESC &esc, KickState &state, int16_t desiredThrottle);
 
 public:
     MotorCtrl(float generalMotorPowerScalerPercent);
