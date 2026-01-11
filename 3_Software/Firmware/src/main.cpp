@@ -254,7 +254,7 @@ void task_batteryMonitor(void *parameter)
                   mah);
 
 	// Push latest battery telemetry to all connected web clients.
-	networkPiloting.sendTelemetry(v, a);
+    networkPiloting.sendTelemetry(v, a, mah);
 
     // Relatively large delta_t is fine; update() integrates using millis().
     vTaskDelay(1000 / portTICK_PERIOD_MS);

@@ -151,51 +151,41 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		}
 		.range:active::-webkit-slider-thumb { transform: scale(1.05); }
 		.vertical-wrap { display: flex; justify-content: center; align-items: center; height: 100%; }
-		.vertical-range { writing-mode: bt-lr; transform: rotate(-90deg); width: 260px; height: 42px; }
-		.placeholder {
-			position: relative;
-			width: 100%;
-			height: 180px;
-			background: linear-gradient(135deg, rgba(57,192,255,0.08), rgba(14,27,42,0.9));
-			border: 1px dashed rgba(124,242,156,0.35);
-			border-radius: 14px;
+		.vertical-range { writing-mode: bt-lr; transform: rotate(-90deg); width: 200px; height: 42px; }
+		.controls-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 18px;
+			margin-top: 8px;
+		}
+		.joystick-slot {
+			width: 200px;
+			height: 200px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.video-frame {
+			flex: 1;
+			max-width: 820px;
+			min-width: 240px;
+			aspect-ratio: 4 / 3;
+			border-radius: 16px;
+			background: radial-gradient(circle at 30% 30%, rgba(124,242,156,0.14), rgba(57,192,255,0.1)),
+			            linear-gradient(135deg, rgba(57,192,255,0.08), rgba(14,27,42,0.9));
+			border: 1px dashed rgba(124,242,156,0.25);
 			overflow: hidden;
+			position: relative;
 		}
-		.thrust-overlay {
+		.video-inner {
 			position: absolute;
-			top: 50%;
-			left: 12px;
-			transform: translateY(-50%);
-			width: 94px;
-			height: 180px;
-			display: flex;
-			align-items: center;
-			z-index: 3;
-		}
-		.thrust-overlay .panel {
+			top: 0;
+			left: 0;
 			width: 100%;
 			height: 100%;
-			background: rgba(14,27,42,0.5);
-			backdrop-filter: blur(10px);
-			border: 1px solid rgba(255,255,255,0.08);
-		}
-		.steer-overlay {
-			position: absolute;
-			top: 50%;
-			right: 12px;
-			transform: translateY(-50%);
-			width: 180px;
-			height: 180px;
-			display: flex;
-			align-items: center;
-			z-index: 3;
-		}
-		.steer-overlay .panel {
-			width: 100%;
-			height: 100%;
-			background: rgba(14,27,42,0.5);
-			backdrop-filter: blur(10px);
-			border: 1px solid rgba(255,255,255,0.08);
+			background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 12px, transparent 12px, transparent 24px);
+			mix-blend-mode: screen;
 		}
 		.range.steer-range {
 			background: linear-gradient(90deg, rgba(255,255,255,0.15), rgba(255,255,255,0.15));
@@ -230,23 +220,19 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 				<div class="metric" id="metricCurrent">Used: --- mAh</div>
 				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
 			</div>
-			<div class="grid">
-				<div class="panel view">
-					<div class="thrust-overlay">
-						<div class="panel thrust">
-							<div class="vertical-wrap">
-								<input id="thrust" class="range vertical-range thrust-range" type="range" min="-100" max="100" step="1" value="0" />
-							</div>
-						</div>
+			<div class="controls-row">
+				<div class="joystick-slot">
+					<div class="vertical-wrap">
+						<input id="thrust" class="range vertical-range thrust-range" type="range" min="-100" max="100" step="1" value="0" />
 					</div>
-					<div class="steer-overlay">
-						<div class="panel steer">
-							<div class="vertical-wrap">
-								<input id="steer" class="range steer-range" type="range" min="-100" max="100" step="1" value="0" />
-							</div>
-						</div>
+				</div>
+				<div class="video-frame">
+					<div class="video-inner"></div>
+				</div>
+				<div class="joystick-slot">
+					<div class="vertical-wrap">
+						<input id="steer" class="range steer-range" type="range" min="-100" max="100" step="1" value="0" />
 					</div>
-					<div class="placeholder"></div>
 				</div>
 			</div>
 		</div>
@@ -599,6 +585,9 @@ void NetworkPiloting::applyArm(bool enabled)
 
 void NetworkPiloting::sendTelemetry(float voltage, float current, float usedMah)
 {
+	if (ws_.count() == 0) {
+		return; // no clients to receive this frame
+	}
 	// Compact JSON broadcast to all clients; values are in volts/amps/mAh already.
 	ws_.textAll(String("{\"batt\":") + String(voltage, 2) +
 	            ",\"curr\":" + String(current, 2) +
