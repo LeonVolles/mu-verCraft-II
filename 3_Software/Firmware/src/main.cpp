@@ -11,7 +11,7 @@
 // Include all subsystem headers
 #include <motor_ctrl.h>
 #include <motor_mixer.h>
-// #include <imu.h>       // FOR NOW NOT AT ALL FUNCTIONAL!!!
+#include <imu.h>
 #include <wifi_manager.h>
 #include <network_piloting.h>
 #include <ir_sensors.h>
@@ -34,6 +34,18 @@ NetworkPiloting networkPiloting;
 // http://192.168.4.1/
 static const char *AP_SSID = "µ-verCraft-II AP";
 static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
+
+// IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
+IMU imu(global_ComplementaryFilter_yawAlpha);
+
+// IR Line Sensors
+IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
+                    (int)global_PIN_IR_SENSOR_FL,
+                    (int)global_PIN_IR_SENSOR_FR,
+                    global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+
+// Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
+BatteryMonitor batteryMonitor;
 
 // Struct+Queue for communication between WIFI-Control and Motor Management
 struct ControlSetpoints
@@ -59,7 +71,7 @@ TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors, maybe ca
 TaskHandle_t taskH_batteryMonitor = NULL;  // task: reading battery voltage/current, warning on low battery and capacity calculation
 
 // **************************************************
-// (?temporary?) TASK FUNCTIONS THAT ARE CALLED BY SCHEDULER
+// TASK FUNCTIONS THAT ARE CALLED BY SCHEDULER
 // **************************************************
 void task_blink(void *parameter)
 {
@@ -100,12 +112,62 @@ void task_wifiManager(void *parameter)
 
 void task_imu(void *parameter)
 {
+  (void)parameter;
+
+  // Let other subsystems bring Serial up.
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+
+  Serial.printf("[IMU] task running on core %d\n", xPortGetCoreID());
+  imu.init();
+
+  Serial.printf("[IMU] ready=%d accel=%d gyro=%d mag=%d baro=%d\n",
+                (int)imu.isReady(), (int)imu.hasAccel(), (int)imu.hasGyro(), (int)imu.hasMag(), (int)imu.hasBaro());
+
+  // Yaw complementary filter: mostly gyro, slow magnetometer correction
+  imu.setYawFilterAlpha(global_ComplementaryFilter_yawAlpha);
+  imu.resetYawToMag();
+
+  // Optional: calibrate accel reference (keep craft still + level for ~1s)
+  if (imu.hasAccel())
+  {
+    Serial.println("[IMU] calibrating accel reference...");
+    imu.calibrateAccelReference(200, 5);
+    Serial.println("[IMU] accel calibration done");
+  }
+
+  TickType_t lastWake = xTaskGetTickCount();
+  const TickType_t period = 50 / portTICK_PERIOD_MS; // 20 Hz
+
   for (;;)
   {
-    // Placeholder for IMU handling code
-    //Serial.print("task_imu running on core ");
-    //Serial.println(xPortGetCoreID());
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    float ax, ay, az;
+    float gx, gy, gz;
+    int16_t mx, my, mz;
+    float head;
+    float tempC, pres;
+
+    imu.getAccel_raw(&ax, &ay, &az);
+    imu.getGyro_raw(&gx, &gy, &gz);
+    imu.getMag_raw(&mx, &my, &mz, &head);
+    imu.getEnv(&tempC, &pres);
+
+    // Update yaw estimate (gyro+mag complementary filter) using the same gyro/mag values we just read
+    imu.updateYawComplementaryFrom(gz, head);
+    const float yaw_PureCompass = head;
+    const float yaw_PureGyro = imu.getYawGyro_deg();
+    const float yaw_Complementary = imu.getYaw_deg();
+
+    // Rate-limited debug output (SerialPlot friendly)
+    Serial.printf("ax:%.2f ay:%.2f az:%.2f gx:%.3f gy:%.3f gz:%.3f mx:%d my:%d mz:%d yaw_PureCompass:%.1f yaw_PureGyro:%.1f yaw_Complementary:%.1f t:%.2f p:%.2f\n",
+                  ax, ay, az,
+                  gx, gy, gz,
+                  (int)mx, (int)my, (int)mz,
+                  yaw_PureCompass,
+                  yaw_PureGyro,
+                  yaw_Complementary,
+                  tempC, pres);
+
+    vTaskDelayUntil(&lastWake, period);
   }
 }
 
@@ -146,23 +208,53 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
+  // If you need to access the global object, you can just use 'irSensors' directly,
+  // or pass it via parameter if you prefer strict encapsulation.
+  // Here we use the global object 'irSensors'.
+
   for (;;)
   {
-    // Placeholder for IR sensor handling code
-    //Serial.print("task_irSensors running on core ");
-    //Serial.println(xPortGetCoreID());
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // Check if the ISRs have completed a full measurement set
+    if (irSensors.hasNewMeasurement())
+    {
+      float alpha = irSensors.getAlphaToLine();
+      float vPerp = irSensors.getVelocityPerpToLine();
+
+      // Clear the flag so we don't read the same event multiple times
+      irSensors.consumeNewMeasurement();
+
+      // For now: Debug output.
+      // Later: Send this to a Navigation/Control Queue.
+      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+    }
+
+    // Polling interval. Since line crossings are short events handled by ISRs,
+    // this task just needs to pick up the results frequently enough not to miss
+    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }
 
 void task_batteryMonitor(void *parameter)
 {
+  (void)parameter;
+
   for (;;)
   {
-    // Placeholder for battery monitoring code
-    //Serial.print("task_batteryMonitor running on core ");
-    //Serial.println(xPortGetCoreID());
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    batteryMonitor.update();
+
+    const float v = batteryMonitor.getVoltage();
+    const float a = batteryMonitor.getCurrent();
+    const float mah = batteryMonitor.getMAH();
+
+    Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+                  xPortGetCoreID(),
+                  v,
+                  a,
+                  mah);
+
+    // Relatively large delta_t is fine; update() integrates using millis().
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -193,6 +285,17 @@ void setup()
 
   // Initialize motor mixer
   motorMixer.init();
+
+  // Initialize IR Sensors (attaches interrupts), Ensure the pins are set up correctly inside begin()
+  irSensors.begin();
+
+  // Initialize battery monitor
+  batteryMonitor.init(
+      (int)global_PIN_BATTERY_VOLTAGE_MONITOR,
+      (int)global_PIN_BATTERY_CURRENT_MONITOR,
+      global_BatteryVoltage_VoltageDividerRatio,
+      global_BatteryCurrent_VoltageDividerRatio,
+      global_BatteryCurrent_SensorScaler_AmpsPerVolt);
 
   // **************************************************
   // CREATE RTOS QUEUES FOR COMMUNICATION BETWEEN TASKS
@@ -271,7 +374,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_wifiManager,
       "task_wifiManager",
-      20000,
+      4096, // stack size, needs to be adjusted when code is written
       NULL,
       1,
       &taskH_wifi,
@@ -281,7 +384,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_imu,
       "task_imu",
-      20000,
+      4096, // stack size, needs to be adjusted when code is written
       NULL,
       1,
       &taskH_imu,
@@ -291,7 +394,7 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_motorManagement,
       "task_motorManagement",
-      20000,
+      4096,        // stack size, may need to be adjusted
       &motorMixer, // pass pointer to MotorMixer
       1,
       &taskH_motorManagement,
@@ -301,17 +404,17 @@ void setup()
   xTaskCreatePinnedToCore(
       &task_irSensors,
       "task_irSensors",
-      20000,
+      4096, // smaller stack as not much is done here, this should be fine, to see in future
       NULL,
-      1,
-      &taskH_irSensors,
+      2,                // higher priority to stay up to date with line crossings
+      &taskH_irSensors, // pass pointer to IR-Sensor function
       1);
 
   // Battery Monitor Task
   xTaskCreatePinnedToCore(
       &task_batteryMonitor,
       "task_batteryMonitor",
-      20000,
+      2048, // stack size, needs to be adjusted when code is written, but probably not too big
       NULL,
       1,
       &taskH_batteryMonitor,
@@ -321,4 +424,6 @@ void setup()
 void loop()
 {
   // Nothing to do here for now
+  //??  Copilot suggested:
+  // vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
