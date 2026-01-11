@@ -387,20 +387,16 @@ NetworkPiloting::NetworkPiloting() : server_(80), ws_("/ws"), lift_(0.0f), thrus
 
 void NetworkPiloting::begin()
 {
-	ws_.onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
-		handleWebSocketEvent(server, client, type, arg, data, len);
-	});
+	ws_.onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
+				{ handleWebSocketEvent(server, client, type, arg, data, len); });
 
 	// Serve embedded page from flash
-	server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-		request->send_P(200, "text/html", CONTROLLER_HTML);
-	});
-	server_.on("/controller.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-		request->send_P(200, "text/html", CONTROLLER_HTML);
-	});
-	server_.onNotFound([](AsyncWebServerRequest *request) {
-		request->send_P(200, "text/html", CONTROLLER_HTML);
-	});
+	server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
+	server_.on("/controller.html", HTTP_GET, [](AsyncWebServerRequest *request)
+			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
+	server_.onNotFound([](AsyncWebServerRequest *request)
+					   { request->send_P(200, "text/html", CONTROLLER_HTML); });
 
 	server_.addHandler(&ws_);
 	server_.begin();
@@ -504,15 +500,21 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 		}
 
 		// Parse fields independently (lightweight, no full JSON dep)
-		auto parseNumber = [&payload](const char *key, float &outVal, float minVal, float maxVal) {
+		auto parseNumber = [&payload](const char *key, float &outVal, float minVal, float maxVal)
+		{
 			int pos = payload.indexOf(key);
-			if (pos == -1) return false;
+			if (pos == -1)
+				return false;
 			int cPos = payload.indexOf(':', pos);
-			if (cPos == -1) return false;
+			if (cPos == -1)
+				return false;
 			float val = payload.substring(cPos + 1).toFloat();
-			if (isnan(val)) return false;
-			if (val < minVal) val = minVal;
-			if (val > maxVal) val = maxVal;
+			if (isnan(val))
+				return false;
+			if (val < minVal)
+				val = minVal;
+			if (val > maxVal)
+				val = maxVal;
 			outVal = val;
 			return true;
 		};
@@ -567,9 +569,9 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 		if (updated)
 		{
 			server->textAll(String("{\"lift\":") + String(lift_, 1) +
-			               ",\"thrust\":" + String(thrust_, 1) +
-			               ",\"steering\":" + String(steering_, 1) +
-			               ",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") + "}");
+							",\"thrust\":" + String(thrust_, 1) +
+							",\"steering\":" + String(steering_, 1) +
+							",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") + "}");
 		}
 	}
 }
@@ -585,11 +587,12 @@ void NetworkPiloting::applyArm(bool enabled)
 
 void NetworkPiloting::sendTelemetry(float voltage, float current, float usedMah)
 {
-	if (ws_.count() == 0) {
+	if (ws_.count() == 0)
+	{
 		return; // no clients to receive this frame
 	}
 	// Compact JSON broadcast to all clients; values are in volts/amps/mAh already.
 	ws_.textAll(String("{\"batt\":") + String(voltage, 2) +
-	            ",\"curr\":" + String(current, 2) +
-	            ",\"mah\":" + String(usedMah, 0) + "}");
+				",\"curr\":" + String(current, 2) +
+				",\"mah\":" + String(usedMah, 0) + "}");
 }

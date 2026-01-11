@@ -54,9 +54,10 @@ struct ControlSetpoints
   float thrust;
   float diffThrust;
   bool motorsEnabled;
+  bool liftEnabled;
 };
 QueueHandle_t g_controlQueue = nullptr;
-static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false};
+static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false, false};
 
 // **************************************************
 // DEFINE/DECLARE ALL TASK HANDLES
@@ -78,13 +79,13 @@ void task_blink(void *parameter)
   for (;;)
   { // Infinite loop
     digitalWrite(LED_PIN, HIGH);
-    //Serial.println("task_blink: LED ON");
+    // Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
     digitalWrite(LED_PIN, LOW);
-    //Serial.println("task_blink: LED OFF");
+    // Serial.println("task_blink: LED OFF");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //Serial.print("task_blink running on core ");
-    //Serial.println(xPortGetCoreID());
+    // Serial.print("task_blink running on core ");
+    // Serial.println(xPortGetCoreID());
   }
 }
 
@@ -175,7 +176,7 @@ void task_motorManagement(void *parameter)
 {
   MotorMixer *mixer = static_cast<MotorMixer *>(parameter);
 
-  ControlSetpoints mySetPoint{0, 0, 0, false};
+  ControlSetpoints mySetPoint{0, 0, 0, false, false};
 
   for (;;)
   {
@@ -189,6 +190,9 @@ void task_motorManagement(void *parameter)
     }
 
     // Apply whatever values are in mySetPoint (last known setpoints)
+    // Enforce emergency override at MotorCtrl level as well.
+    motorCtrl.setMotorsEnabled(mySetPoint.motorsEnabled);
+
     if (!mySetPoint.motorsEnabled)
     {
       mixer->setLift(0.0f);
@@ -197,7 +201,19 @@ void task_motorManagement(void *parameter)
     }
     else
     {
-      mixer->setLift(mySetPoint.lift);
+      // Lift OFF only affects the two front motors.
+      if (!mySetPoint.liftEnabled)
+      {
+        // Hard-stop lift motors and keep mixer lift at 0.
+        motorCtrl.applyLiftOff();
+        mixer->setLift(0.0f);
+      }
+      else
+      {
+        mixer->setLift(mySetPoint.lift);
+      }
+
+      // Thrust + steering should still work even if lift is OFF.
       mixer->setDiffThrust(mySetPoint.diffThrust);
       mixer->setThrust(mySetPoint.thrust);
     }
@@ -253,7 +269,7 @@ void task_batteryMonitor(void *parameter)
                   a,
                   mah);
 
-	// Push latest battery telemetry to all connected web clients.
+    // Push latest battery telemetry to all connected web clients.
     networkPiloting.sendTelemetry(v, a, mah);
 
     // Relatively large delta_t is fine; update() integrates using millis().
@@ -276,9 +292,9 @@ void setup()
   // INITIALIZE ALL OBJECTS THAT ARE NEEDED
   // **************************************************
 
-  // **************************************
+  // **************************************************
   // MOTOR CONTROLLER INITIALIZATION
-  // **************************************
+  // **************************************************
   // Initialize motors with defined IO pins and motor directions from hovercraft_variables.h
   motorCtrl.init(
       global_PIN_MOTOR_FL,
@@ -301,12 +317,15 @@ void setup()
   motorMixer.init(); // inits internal variables with zeros
   delay(100);
 
-  // **************************************
+  // **************************************************
   // IR SENSORS INITIALIZATION
-  // **************************************
+  // **************************************************
   // Initialize IR Sensors (attaches interrupts), Ensure the pins are set up correctly inside begin()
   irSensors.begin();
 
+  // **************************************************
+  // BATTERY MONITOR INITIALIZATION
+  // **************************************************
   // Initialize battery monitor
   batteryMonitor.init(
       (int)global_PIN_BATTERY_VOLTAGE_MONITOR,
@@ -330,47 +349,49 @@ void setup()
   // **************************************************
   wifiManager.startAccessPoint(AP_SSID, AP_PASSWORD);
 
-  networkPiloting.setLiftCallback([](float liftPercent) {
+  networkPiloting.setLiftCallback([](float liftPercent)
+                                  {
     g_latestSetpoints.lift = liftPercent;
+    g_latestSetpoints.liftEnabled = (liftPercent > 0.0f);
     if (g_controlQueue != nullptr)
     {
       xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
     }
-    Serial.printf("Lift=%.1f%%\n", liftPercent);
-  });
+    Serial.printf("Lift=%.1f%%\n", liftPercent); });
 
-  networkPiloting.setThrustCallback([](float thrustPercent) {
+  networkPiloting.setThrustCallback([](float thrustPercent)
+                                    {
     g_latestSetpoints.thrust = thrustPercent;
     if (g_controlQueue != nullptr)
     {
       xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
     }
-    Serial.printf("Thrust=%.1f%%\n", thrustPercent);
-  });
+    Serial.printf("Thrust=%.1f%%\n", thrustPercent); });
 
-  networkPiloting.setSteeringCallback([](float steeringPercent) {
+  networkPiloting.setSteeringCallback([](float steeringPercent)
+                                      {
     g_latestSetpoints.diffThrust = steeringPercent;
     if (g_controlQueue != nullptr)
     {
       xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
     }
-    Serial.printf("Steering=%.1f%%\n", steeringPercent);
-  });
+    Serial.printf("Steering=%.1f%%\n", steeringPercent); });
 
-  networkPiloting.setArmCallback([](bool enabled) {
+  networkPiloting.setArmCallback([](bool enabled)
+                                 {
     g_latestSetpoints.motorsEnabled = enabled;
     if (!enabled)
     {
       g_latestSetpoints.lift = 0.0f;
       g_latestSetpoints.thrust = 0.0f;
       g_latestSetpoints.diffThrust = 0.0f;
+      g_latestSetpoints.liftEnabled = false;
     }
     if (g_controlQueue != nullptr)
     {
       xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
     }
-    Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
-  });
+    Serial.printf("Motors %s\n", enabled ? "ON" : "OFF"); });
 
   networkPiloting.begin();
 

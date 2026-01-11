@@ -80,6 +80,27 @@ void MotorCtrl::sendThrottle3D_WithKick(DShotESC &esc, KickState &state, int16_t
     state.lastSentThrottle = desiredThrottle;
 }
 
+void MotorCtrl::applyEmergencyOff()
+{
+    // Force all motors to 0 throttle immediately (independent of any mixer/setpoint logic).
+    sendThrottle3D_WithKick(escFL, pKickFL, 0);
+    sendThrottle3D_WithKick(escFR, pKickFR, 0);
+    sendThrottle3D_WithKick(escBL, pKickBL, 0);
+    sendThrottle3D_WithKick(escBR, pKickBR, 0);
+
+    // Keep internal state consistent with outputs.
+    pPercentFL = 0.0f;
+    pPercentFR = 0.0f;
+    pPercentBL = 0.0f;
+    pPercentBR = 0.0f;
+
+    // Reset kick state so a later re-enable starts cleanly.
+    pKickFL = KickState{};
+    pKickFR = KickState{};
+    pKickBL = KickState{};
+    pKickBR = KickState{};
+}
+
 MotorCtrl::MotorCtrl(float generalMotorPowerScalerPercent)
     : pGeneralMotorPowerScalerPercent(generalMotorPowerScalerPercent)
 {
@@ -93,6 +114,39 @@ MotorCtrl::MotorCtrl(float generalMotorPowerScalerPercent)
     pSetReversedFR = false;
     pSetReversedBL = false;
     pSetReversedBR = false;
+
+    // Safety: default to disabled until the control logic explicitly arms.
+    pMotorsEnabled = false;
+}
+
+void MotorCtrl::setMotorsEnabled(bool enabled)
+{
+    pMotorsEnabled = enabled;
+    if (!pMotorsEnabled)
+    {
+        applyEmergencyOff();
+    }
+}
+
+bool MotorCtrl::motorsEnabled() const
+{
+    return pMotorsEnabled;
+}
+
+void MotorCtrl::EmergencyOff()
+{
+    setMotorsEnabled(false);
+}
+
+void MotorCtrl::applyLiftOff()
+{
+    // Stop lift motors immediately (front left/right).
+    // We intentionally do not touch rear motors here.
+    pPercentFL = 0.0f;
+    pPercentFR = 0.0f;
+
+    sendThrottle3D_WithKick(escFL, pKickFL, 0);
+    sendThrottle3D_WithKick(escFR, pKickFR, 0);
 }
 
 void MotorCtrl::init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gpio_num_t br_pin, bool pSetReversedFL, bool pSetReversedFR, bool pSetReversedBL, bool pSetReversedBR)
@@ -152,15 +206,29 @@ void MotorCtrl::init(gpio_num_t fl_pin, gpio_num_t fr_pin, gpio_num_t bl_pin, gp
     pKickFR = KickState{};
     pKickBL = KickState{};
     pKickBR = KickState{};
+
+    // Ensure outputs are 0 and the safety gate starts in the "disabled" state.
+    pMotorsEnabled = false;
+    applyEmergencyOff();
 }
 
 void MotorCtrl::tempForDebug_SetFL_directly(int16_t throttle)
 {
+    if (!pMotorsEnabled)
+    {
+        applyEmergencyOff();
+        return;
+    }
     sendThrottle3D_WithKick(escFL, pKickFL, throttle);
 }
 
 void MotorCtrl::tempForDebug_SetAll_directly(int16_t throttle)
 {
+    if (!pMotorsEnabled)
+    {
+        applyEmergencyOff();
+        return;
+    }
     sendThrottle3D_WithKick(escFL, pKickFL, throttle);
     sendThrottle3D_WithKick(escFR, pKickFR, throttle);
     sendThrottle3D_WithKick(escBL, pKickBL, throttle);
@@ -171,6 +239,13 @@ void MotorCtrl::tempForDebug_SetAll_directly(int16_t throttle)
 // Throttle value to the ESC is between -999 and 999
 void MotorCtrl::setFrontLeftPercent(float pct)
 {
+    if (!pMotorsEnabled)
+    {
+        // Emergency override: always force 0 throttle.
+        pPercentFL = 0.0f;
+        sendThrottle3D_WithKick(escFL, pKickFL, 0);
+        return;
+    }
     pPercentFL = pct;
 
     // Rescale from -100..100% to -999..999 for DShot3D
@@ -190,6 +265,12 @@ void MotorCtrl::setFrontLeftPercent(float pct)
 
 void MotorCtrl::setFrontRightPercent(float pct)
 {
+    if (!pMotorsEnabled)
+    {
+        pPercentFR = 0.0f;
+        sendThrottle3D_WithKick(escFR, pKickFR, 0);
+        return;
+    }
     pPercentFR = pct;
 
     // Rescale from -100..100% to -999..999 for DShot3D
@@ -209,6 +290,12 @@ void MotorCtrl::setFrontRightPercent(float pct)
 
 void MotorCtrl::setBackLeftPercent(float pct)
 {
+    if (!pMotorsEnabled)
+    {
+        pPercentBL = 0.0f;
+        sendThrottle3D_WithKick(escBL, pKickBL, 0);
+        return;
+    }
     pPercentBL = pct;
 
     // Rescale from -100..100% to -999..999 for DShot3D
@@ -228,6 +315,12 @@ void MotorCtrl::setBackLeftPercent(float pct)
 
 void MotorCtrl::setBackRightPercent(float pct)
 {
+    if (!pMotorsEnabled)
+    {
+        pPercentBR = 0.0f;
+        sendThrottle3D_WithKick(escBR, pKickBR, 0);
+        return;
+    }
     pPercentBR = pct;
 
     // Rescale from -100..100% to -999..999 for DShot3D
@@ -247,6 +340,11 @@ void MotorCtrl::setBackRightPercent(float pct)
 
 void MotorCtrl::setAllPercent(float fl, float fr, float bl, float br)
 {
+    if (!pMotorsEnabled)
+    {
+        applyEmergencyOff();
+        return;
+    }
     pPercentFL = fl;
     pPercentFR = fr;
     pPercentBL = bl;
