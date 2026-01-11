@@ -40,14 +40,19 @@ static const gpio_num_t global_PIN_I2C_SDA = GPIO_NUM_5;
 static const gpio_num_t global_PIN_I2C_SCL = GPIO_NUM_6;
 
 // *************************************************
-// Battery limits
+// Battery related limits and variables
 // *************************************************
-// Only declared here, defined in variables.cpp
+// Voltage divider (resistors) ratio: V_battery = V_pin * ratio
+extern const float global_BatteryVoltage_DividerRatio;
+extern const float global_BatteryCurrent_VoltageDividerRatio;
+
+// Betaflight-style current scale in units of [0.1 mV] / Amp.
+// Example: scale=130 => 13 mV/A => Current(A) = Sensor_mV / 13
+extern const float global_BatteryCurrent_SensorScaler_AmpsPerVolt;
+
+// Cutoff/warning voltages
 extern const float global_BatteryVoltageLow_WarningLow;     // warning with LED/Wifi when below this voltage
 extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should stop turning below this voltage
-
-extern const float global_BatteryVoltage_DividerRatio;             // voltage divider ratio, depends on the resistors used for voltage divider
-extern const float global_BatteryCurrent_SensorScaler_AmpsPerVolt; // see ESC datasheet
 
 // *************************************************
 // Motor control variables

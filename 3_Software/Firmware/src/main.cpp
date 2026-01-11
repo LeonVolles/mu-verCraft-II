@@ -56,20 +56,20 @@ TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors, maybe ca
 TaskHandle_t taskH_batteryMonitor = NULL;  // task: reading battery voltage/current, warning on low battery and capacity calculation
 
 // **************************************************
-// (?temporary?) TASK FUNCTIONS THAT ARE CALLED BY SCHEDULER
+// TASK FUNCTIONS THAT ARE CALLED BY SCHEDULER
 // **************************************************
 void task_blink(void *parameter)
 {
   for (;;)
   { // Infinite loop
     digitalWrite(LED_PIN, HIGH);
-    //   Serial.println("task_blink: LED ON");
+    Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
     digitalWrite(LED_PIN, LOW);
-    //   Serial.println("task_blink: LED OFF");
+    Serial.println("task_blink: LED OFF");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //   Serial.print("task_blink running on core ");
-    //   Serial.println(xPortGetCoreID());
+    Serial.print("task_blink running on core ");
+    Serial.println(xPortGetCoreID());
   }
 }
 
@@ -198,7 +198,7 @@ void task_irSensors(void *parameter)
 
       // For now: Debug output.
       // Later: Send this to a Navigation/Control Queue.
-      //   Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
     }
 
     // Polling interval. Since line crossings are short events handled by ISRs,
@@ -213,8 +213,8 @@ void task_batteryMonitor(void *parameter)
   for (;;)
   {
     // Placeholder for battery monitoring code
-    //   Serial.print("task_batteryMonitor running on core ");
-    //   Serial.println(xPortGetCoreID());
+    Serial.print("task_batteryMonitor running on core ");
+    Serial.println(xPortGetCoreID());
     vTaskDelay(3000 / portTICK_PERIOD_MS);
   }
 }

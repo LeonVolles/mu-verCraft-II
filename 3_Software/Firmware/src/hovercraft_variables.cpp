@@ -11,13 +11,18 @@ const int IR2_PIN = 2; // IR Sensor 2 = Front-Left sensor = GPIO2
 const int IR3_PIN = 3; // IR Sensor 3 = Front-Right sensor = GPIO3
 
 // *************************************************
-// Battery limits (actual definitions)
+// Battery related limits and variables(actual definitions)
 // *************************************************
+// Voltage divider (resistors) ratio: V_battery = V_pin * ratio
+const float global_BatteryVoltage_VoltageDividerRatio = 0.3125f; // voltage divider ratio, depends on the resistors used for voltage divider, here 100kOhm/(100kOhm+220kOhm) = 0.3125
+const float global_BatteryCurrent_VoltageDividerRatio = 1.0f;    // current sensor voltage divider ratio, if any
+
+// Betaflight-style current scale in units of [0.1 mV] / Amp.
+// Example: scale=130 => 13 mV/A => Current(A) = Sensor_mV / 13
+const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 130.0f; // from the ESC datasheet
+
 const float global_BatteryVoltageLow_WarningLow = 7.4f;     // warning with LED/Wifi when below this voltage, for 2s LiPo ~3.70V per cell
 const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should stop turning below this voltage, for 2s LiPo ~3.50V per cell
-
-const float global_BatteryVoltage_DividerRatio = 2.0f;              // voltage divider ratio, depends on the resistors used for voltage divider
-const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 30.0f; // see ESC datasheet
 
 // *************************************************
 // Motor control variables (actual definitions)
