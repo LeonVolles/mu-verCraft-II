@@ -14,36 +14,30 @@
 // Declaration, the actual value is defined in variables.cpp
 extern const int LED_PIN;
 
-// IR sensor pins (legacy names used by some modules)
-extern const int IR1_PIN;
-extern const int IR2_PIN;
-extern const int IR3_PIN;
-
 // Motor IO/DSHOT Pins
-// These are compile time constants, it is fine to keep the definitions in the header
-static const gpio_num_t global_PIN_MOTOR_FL = GPIO_NUM_8;
-static const gpio_num_t global_PIN_MOTOR_FR = GPIO_NUM_7;
-static const gpio_num_t global_PIN_MOTOR_BL = GPIO_NUM_44;
-static const gpio_num_t global_PIN_MOTOR_BR = GPIO_NUM_43;
+extern const gpio_num_t global_PIN_MOTOR_FL;
+extern const gpio_num_t global_PIN_MOTOR_FR;
+extern const gpio_num_t global_PIN_MOTOR_BL;
+extern const gpio_num_t global_PIN_MOTOR_BR;
 
 // Battery Monitoring Pins
-static const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR = GPIO_NUM_9;
-static const gpio_num_t global_PIN_BATTERY_CURRENT_MONITOR = GPIO_NUM_4;
+extern const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR;
+extern const gpio_num_t global_PIN_BATTERY_CURRENT_MONITOR;
 
 // IR-Sensor Pins
-static const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_1;
-static const gpio_num_t global_PIN_IR_SENSOR_FR = GPIO_NUM_2;
-static const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_3;
+extern const gpio_num_t global_PIN_IR_SENSOR_FL;
+extern const gpio_num_t global_PIN_IR_SENSOR_FR;
+extern const gpio_num_t global_PIN_IR_SENSOR_BM;
 
 // I2C Pins (GPIO5 = SDA, GPIO6 = SCL)
-static const gpio_num_t global_PIN_I2C_SDA = GPIO_NUM_5;
-static const gpio_num_t global_PIN_I2C_SCL = GPIO_NUM_6;
+extern const gpio_num_t global_PIN_I2C_SDA;
+extern const gpio_num_t global_PIN_I2C_SCL;
 
 // *************************************************
 // Battery related limits and variables
 // *************************************************
 // Voltage divider (resistors) ratio: V_battery = V_pin * ratio
-extern const float global_BatteryVoltage_DividerRatio;
+extern const float global_BatteryVoltage_VoltageDividerRatio;
 extern const float global_BatteryCurrent_VoltageDividerRatio;
 
 // Betaflight-style current scale in units of [0.1 mV] / Amp.

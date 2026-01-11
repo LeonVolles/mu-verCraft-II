@@ -32,7 +32,13 @@ MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor control
 IMU imu(global_ComplementaryFilter_yawAlpha);
 
 // IR Line Sensors
-IRSensors irSensors(IR1_PIN, IR2_PIN, IR3_PIN, global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
+                    (int)global_PIN_IR_SENSOR_FL,
+                    (int)global_PIN_IR_SENSOR_FR,
+                    global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+
+// Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
+BatteryMonitor batteryMonitor;
 
 // Struct+Queue for communication between WIFI-Control and Motor Management
 struct ControlSetpoints
@@ -210,12 +216,24 @@ void task_irSensors(void *parameter)
 
 void task_batteryMonitor(void *parameter)
 {
+  (void)parameter;
+
   for (;;)
   {
-    // Placeholder for battery monitoring code
-    Serial.print("task_batteryMonitor running on core ");
-    Serial.println(xPortGetCoreID());
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    batteryMonitor.update();
+
+    const float v = batteryMonitor.getVoltage();
+    const float a = batteryMonitor.getCurrent();
+    const float mah = batteryMonitor.getMAH();
+
+    Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+                  xPortGetCoreID(),
+                  v,
+                  a,
+                  mah);
+
+    // Relatively large delta_t is fine; update() integrates using millis().
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -249,6 +267,14 @@ void setup()
 
   // Initialize IR Sensors (attaches interrupts), Ensure the pins are set up correctly inside begin()
   irSensors.begin();
+
+  // Initialize battery monitor
+  batteryMonitor.init(
+      (int)global_PIN_BATTERY_VOLTAGE_MONITOR,
+      (int)global_PIN_BATTERY_CURRENT_MONITOR,
+      global_BatteryVoltage_VoltageDividerRatio,
+      global_BatteryCurrent_VoltageDividerRatio,
+      global_BatteryCurrent_SensorScaler_AmpsPerVolt);
 
   // **************************************************
   // CREATE RTOS QUEUES FOR COMMUNICATION BETWEEN TASKS

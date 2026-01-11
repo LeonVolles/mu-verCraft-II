@@ -6,9 +6,25 @@
 // Define all IO-Pins (actual definitions)
 // *************************************************
 const int LED_PIN = LED_BUILTIN;
-const int IR1_PIN = 1; // IR Sensor 1 = Back sensor = GPIO1
-const int IR2_PIN = 2; // IR Sensor 2 = Front-Left sensor = GPIO2
-const int IR3_PIN = 3; // IR Sensor 3 = Front-Right sensor = GPIO3
+
+// Motor IO/DSHOT Pins
+const gpio_num_t global_PIN_MOTOR_FL = GPIO_NUM_8;
+const gpio_num_t global_PIN_MOTOR_FR = GPIO_NUM_7;
+const gpio_num_t global_PIN_MOTOR_BL = GPIO_NUM_44;
+const gpio_num_t global_PIN_MOTOR_BR = GPIO_NUM_43;
+
+// Battery Monitoring Pins
+const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR = GPIO_NUM_9;
+const gpio_num_t global_PIN_BATTERY_CURRENT_MONITOR = GPIO_NUM_4;
+
+// IR-Sensor Pins
+const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_1; // Front-Left sensor
+const gpio_num_t global_PIN_IR_SENSOR_FR = GPIO_NUM_2; // Front-Right sensor
+const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_3; // Back sensor
+
+// I2C Pins (GPIO5 = SDA, GPIO6 = SCL)
+const gpio_num_t global_PIN_I2C_SDA = GPIO_NUM_5;
+const gpio_num_t global_PIN_I2C_SCL = GPIO_NUM_6;
 
 // *************************************************
 // Battery related limits and variables(actual definitions)
