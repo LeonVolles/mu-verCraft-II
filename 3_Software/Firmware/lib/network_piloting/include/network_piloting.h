@@ -36,3 +36,44 @@
 // };
 
 // #endif // NETWORK_PILOTING_H
+
+#pragma once
+
+#include <Arduino.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <functional>
+
+class NetworkPiloting
+{
+public:
+	NetworkPiloting();
+
+	void begin();
+	void loop();
+
+	void setLiftCallback(const std::function<void(float)> &callback);
+	void setThrustCallback(const std::function<void(float)> &callback);
+	void setSteeringCallback(const std::function<void(float)> &callback);
+	void setArmCallback(const std::function<void(bool)> &callback);
+	void sendTelemetry(float voltage, float current, float usedMah);
+	float getLift() const;
+	float getThrust() const;
+	float getSteering() const;
+	bool motorsEnabled() const;
+
+private:
+	AsyncWebServer server_;
+	AsyncWebSocket ws_;
+	float lift_;
+	float thrust_;
+	float steering_;
+	bool motorsEnabled_;
+	std::function<void(float)> onLift_;
+	std::function<void(float)> onThrust_;
+	std::function<void(float)> onSteering_;
+	std::function<void(bool)> onArm_;
+
+	void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+	void applyArm(bool enabled);
+};

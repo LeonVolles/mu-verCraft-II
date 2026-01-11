@@ -10,7 +10,11 @@ MotorMixer::MotorMixer(MotorCtrl &motorCtrl)
 
 void MotorMixer::init()
 {
-    // No initialization needed here for now
+    // Set all motors to zero initially
+    m_lift = 0.0f;
+    m_thrust = 0.0f;
+    m_diffThrustBalance = 0.0f;
+    updateOutputs();
 }
 
 void MotorMixer::setLift(float lift)
@@ -30,6 +34,15 @@ void MotorMixer::setThrust(float thrust)
 void MotorMixer::setDiffThrust(float diffThrust)
 {
     // Ensure -100 to 100
+    m_diffThrustBalance = constrain(diffThrust, -100.0f, 100.0f);
+    updateOutputs();
+}
+
+void MotorMixer::setLiftThrustDiff(float lift, float thrust, float diffThrust)
+{
+    // Set all three at once
+    m_lift = constrain(lift, 0.0f, 100.0f);
+    m_thrust = constrain(thrust, -100.0f, 100.0f);
     m_diffThrustBalance = constrain(diffThrust, -100.0f, 100.0f);
     updateOutputs();
 }

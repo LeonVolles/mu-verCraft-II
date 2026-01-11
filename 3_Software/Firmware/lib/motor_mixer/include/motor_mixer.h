@@ -19,6 +19,7 @@ public:
     void setLift(float lift);
     void setThrust(float thrust);
     void setDiffThrust(float diffThrust);
+    void setLiftThrustDiff(float lift, float thrust, float diffThrust);
 
     float getLift() const;
     float getThrust() const;
