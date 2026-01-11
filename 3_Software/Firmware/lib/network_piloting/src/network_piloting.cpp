@@ -227,7 +227,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 				<button id="liftBtn" class="lift-btn off" style="justify-self:flex-start;">Lift OFF</button>
 				<div class="metric" id="metricBatt">Batt: --.- V</div>
 				<div class="status" style="justify-self:center;"><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span></div>
-				<div class="metric" id="metricCurrent">Current: --.- A</div>
+				<div class="metric" id="metricCurrent">Used: --- mAh</div>
 				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
 			</div>
 			<div class="grid">
@@ -258,6 +258,8 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		const wsDot = document.getElementById('wsDot');
 		const armBtn = document.getElementById('armBtn');
 		const liftBtn = document.getElementById('liftBtn');
+		const metricBatt = document.getElementById('metricBatt');
+		const metricCurrent = document.getElementById('metricCurrent');
 
 		let ws;
 		let sendPending = false;
@@ -336,6 +338,12 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 							state.lift = 0;
 							liftToggle = false;
 						}
+					}
+					if (typeof data.batt === 'number') {
+						metricBatt.textContent = `Batt: ${data.batt.toFixed(2)} V`;
+					}
+					if (typeof data.mah === 'number') {
+						metricCurrent.textContent = `Used: ${data.mah.toFixed(0)} mAh`;
 					}
 					updateLabels();
 				} catch (_) { /* ignore parse errors */ }
@@ -587,4 +595,12 @@ void NetworkPiloting::applyArm(bool enabled)
 	{
 		onArm_(motorsEnabled_);
 	}
+}
+
+void NetworkPiloting::sendTelemetry(float voltage, float current, float usedMah)
+{
+	// Compact JSON broadcast to all clients; values are in volts/amps/mAh already.
+	ws_.textAll(String("{\"batt\":") + String(voltage, 2) +
+	            ",\"curr\":" + String(current, 2) +
+	            ",\"mah\":" + String(usedMah, 0) + "}");
 }
