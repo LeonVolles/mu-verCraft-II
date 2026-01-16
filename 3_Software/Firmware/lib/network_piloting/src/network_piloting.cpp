@@ -20,6 +20,10 @@
 #include "network_piloting.h"
 #include <pgmspace.h>
 
+// Defined in src/hovercraft_variables.cpp (project-level config)
+extern const float global_WebLiftPresetPercent;
+extern const uint16_t global_WebServerPort;
+
 // Embedded controller page so no external filesystem is required
 static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -252,7 +256,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false };
 		let thrustActive = false;
 		let steerActive = false;
-		const LIFT_PRESET = 60; // percent lift when toggle is on
+		const LIFT_PRESET = __LIFT_PRESET__; // percent lift when toggle is on
 		let liftToggle = false;
 
 		function updateLabels() {
@@ -383,20 +387,25 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-NetworkPiloting::NetworkPiloting() : server_(80), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
+NetworkPiloting::NetworkPiloting() : server_(global_WebServerPort), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
 
 void NetworkPiloting::begin()
 {
 	ws_.onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 				{ handleWebSocketEvent(server, client, type, arg, data, len); });
 
-	// Serve embedded page from flash
-	server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
-	server_.on("/controller.html", HTTP_GET, [](AsyncWebServerRequest *request)
-			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
-	server_.onNotFound([](AsyncWebServerRequest *request)
-					   { request->send_P(200, "text/html", CONTROLLER_HTML); });
+	auto sendControllerHtml = [](AsyncWebServerRequest *request)
+	{
+		// We store the HTML in flash (PROGMEM) but inject a few tunables at runtime.
+		String page = FPSTR(CONTROLLER_HTML);
+		page.replace("__LIFT_PRESET__", String(global_WebLiftPresetPercent, 0));
+		request->send(200, "text/html", page);
+	};
+
+	// Serve embedded page (with runtime-injected presets)
+	server_.on("/", HTTP_GET, sendControllerHtml);
+	server_.on("/controller.html", HTTP_GET, sendControllerHtml);
+	server_.onNotFound(sendControllerHtml);
 
 	server_.addHandler(&ws_);
 	server_.begin();

@@ -53,6 +53,12 @@ extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should sto
 // *************************************************
 extern const float global_AllMotorsScalePercent; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 
+// *************************************************
+// Web piloting / UI presets
+// *************************************************
+// Lift preset used by the web UI "Lift ON" toggle (percent).
+extern const float global_WebLiftPresetPercent;
+
 extern bool global_MotorsReversedFL; // Front Left motor reversed
 extern bool global_MotorsReversedFR; // Front Right motor normal
 extern bool global_MotorsReversedBL; // Back Left motor normal
@@ -61,6 +67,13 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 // *************************************************
 // Wifi SSID, PW, IP Adressen
 // *************************************************
+
+// Access Point credentials (softAP)
+extern const char global_WifiApSsid[];
+extern const char global_WifiApPassword[];
+
+// Web UI / webserver port (default: 80)
+extern const uint16_t global_WebServerPort;
 
 // *************************************************
 // Gyro/IMU/Complementary filter settings

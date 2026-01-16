@@ -32,8 +32,6 @@ MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor control
 WifiManager wifiManager;
 NetworkPiloting networkPiloting;
 // http://192.168.4.1/
-static const char *AP_SSID = "µ-verCraft-II AP";
-static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
 
 // IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
 IMU imu(global_ComplementaryFilter_yawAlpha);
@@ -347,7 +345,7 @@ void setup()
   // **************************************************
   // START WIFI ACCESS POINT + WEB CONTROL
   // **************************************************
-  wifiManager.startAccessPoint(AP_SSID, AP_PASSWORD);
+  wifiManager.startAccessPoint(global_WifiApSsid, global_WifiApPassword);
 
   networkPiloting.setLiftCallback([](float liftPercent)
                                   {

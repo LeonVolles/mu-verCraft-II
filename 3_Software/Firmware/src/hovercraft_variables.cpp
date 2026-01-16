@@ -44,6 +44,7 @@ const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should sto
 // Motor control variables (actual definitions)
 // *************************************************
 const float global_AllMotorsScalePercent = 40.0f; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+const float global_WebLiftPresetPercent = 75.0f;  // percent lift when the web UI "Lift" toggle is ON, this is still scaled with global_AllMotorsScalePercent!!
 
 bool global_MotorsReversedFL = true;  // Flag: if true, all Front Left motor commands are reversed
 bool global_MotorsReversedFR = false; // Flag: if true, all Front Right motor commands are reversed
@@ -51,8 +52,13 @@ bool global_MotorsReversedBL = true;  // Flag: if true, all Back Left motor comm
 bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor commands are reversed
 
 // *************************************************
-// Wifi SSID, PW, IP Adressen (define here when needed)
+// Wifi SSID, PW, IP Adressen
 // *************************************************
+
+const char global_WifiApSsid[] = "µ-verCraft-II AP";
+const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
+// Note: WebUi/Website: 192.168.4.1
+const uint16_t global_WebServerPort = 80;
 
 // *************************************************
 // Gyro/IMU/Complementary filter settings
@@ -65,9 +71,13 @@ const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter 
 // const float f_loop = 100.0f;          // Hz
 // const float T_loop = 1.0f / f_loop;   // s
 
+/// *************************************************
+// PID controller constants
 // *************************************************
-// pid;
-// *************************************************
+// Yaw PID
+// const float yaw_Kp = 1.0f;
+// const float yaw_Ki = 0.0f;
+// const float yaw_Kd = 0.0f;
 
 // *************************************************
 // filter??
