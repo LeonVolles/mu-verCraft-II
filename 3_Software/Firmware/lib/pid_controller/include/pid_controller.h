@@ -1,42 +1,42 @@
-// #ifndef PID_CONTROLLER_H
-// #define PID_CONTROLLER_H
+#ifndef PID_CONTROLLER_H
+#define PID_CONTROLLER_H
 
-// #include <Arduino.h>
+#include <Arduino.h>
 
-// class PIDController {
-// private:
-//     float kp, ki, kd;        // PID tuning parameters
-//     float setpoint;          // Target value
-//     float lastInput;         // Last input for derivative calculation
-//     float integralSum;       // Integral accumulator
-//     float output;            // Controller output
-//     float minOutput, maxOutput; // Output limits
-//     bool initialized;        // First run flag
-    
-// public:
-//     PIDController();
-    
-//     // Initialization with PID parameters
-//     void init(float kp, float ki, float kd);
-    
-//     // Reset controller state
-//     void reset();
-    
-//     // PID tuning
-//     void setTunings(float kp, float ki, float kd);
-//     void getTunings(float* kp, float* ki, float* kd);
-    
-//     // Setpoint management
-//     void setSetpoint(float sp);
-//     float getSetpoint();
-    
-//     // Main computation function
-//     float compute(float input, float dt_s);
-    
-//     // Output management
-//     float getOutput();
-//     void setOutputLimits(float minOut, float maxOut);
-//     void getOutputLimits(float* minOut, float* maxOut);
-// };
+class PIDController
+{
+public:
+    PIDController() = default;
 
-// #endif // PID_CONTROLLER_H
+    // Initialize PID gains and limits.
+    // - outputLimit: clamps controller output to +/- outputLimit (in output units)
+    // - integratorLimit: clamps internal I term to +/- integratorLimit (in output units)
+    void init(float kp, float ki, float kd, float outputLimit, float integratorLimit);
+
+    // Update PID controller and return output.
+    // Units are user-defined but must be consistent:
+    // - setpoint and measurement share the same units (e.g., deg/s)
+    // - dt is in seconds
+    float update(float setpoint, float measurement, float dt_s);
+
+    // Reset I term and derivative memory.
+    void reset();
+
+    bool isInitialized() const { return _initialized; }
+
+private:
+    float _kp = 0.0f;
+    float _ki = 0.0f;
+    float _kd = 0.0f;
+
+    float _integrator = 0.0f;
+    float _prevMeasurement = 0.0f;
+    bool _havePrevMeasurement = false;
+
+    float _outputLimit = 0.0f;
+    float _integratorLimit = 0.0f;
+
+    bool _initialized = false;
+};
+
+#endif // PID_CONTROLLER_H

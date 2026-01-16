@@ -53,11 +53,25 @@ extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should sto
 // *************************************************
 extern const float global_AllMotorsScalePercent; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 
+// Reverse-direction compensation factor.
+// If your propellers are less efficient in reverse (negative command), you can boost reverse commands
+// by this factor. Applied only when the *requested* motor command is negative.
+extern const float global_NegativeRpmScaleFactor;
+
 // *************************************************
 // Web piloting / UI presets
 // *************************************************
-// Lift preset used by the web UI "Lift ON" toggle (percent).
-extern const float global_WebLiftPresetPercent;
+// Lift presets used by the web UI.
+// The UI cycles: 0 -> preset[i] -> 0 -> preset[i+1] -> ...
+extern const float global_WebLiftPresetPercent_Array[];
+extern const size_t global_WebLiftPresetPercent_Array_len;
+
+// Start index for the first non-zero lift preset after startup (startup is always 0).
+extern const int global_WebLiftPresetPercent_Array_startIndex;
+
+// Thrust preset: scales the maximum thrust command from the web UI.
+// Example: if this is 50, a full-forward (100%) UI command results in 50% thrust command.
+extern const float global_WebThrustPresetPercent;
 
 extern bool global_MotorsReversedFL; // Front Left motor reversed
 extern bool global_MotorsReversedFR; // Front Right motor normal
@@ -86,9 +100,26 @@ extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter 
 // extern const float f_loop;          // Hz
 // extern const float T_loop;          // s
 
+// Main control loop rate for attitude/rate controllers (Hz).
+extern const float global_ControlLoopRate_Hz;
+
 // *************************************************
 // pid;
 // *************************************************
+
+// Yaw RATE PID (setpoint is yaw rate in deg/s).
+extern const float global_YawRatePid_Kp;
+extern const float global_YawRatePid_Ki;
+extern const float global_YawRatePid_Kd;
+
+// Clamp for PID output in mixer units (diffThrust command, -100..100).
+extern const float global_YawRatePid_OutputLimit;
+
+// Clamp for integral term (in the same units as output).
+extern const float global_YawRatePid_IntegratorLimit;
+
+// Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
+extern const float global_MaxYawRateSetpoint_dps;
 
 // *************************************************
 // filter??

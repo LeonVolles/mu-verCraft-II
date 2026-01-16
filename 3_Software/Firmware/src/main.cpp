@@ -57,6 +57,10 @@ struct ControlSetpoints
 QueueHandle_t g_controlQueue = nullptr;
 static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false, false};
 
+// Shared IMU data for controllers (updated by IMU task, consumed by motor/control task)
+static volatile float g_yawRateMeasured_dps = 0.0f;  // yaw rate (deg/s), sign consistent with IMU yaw integration
+static volatile uint32_t g_lastYawRateUpdate_us = 0; // micros() timestamp
+
 // **************************************************
 // DEFINE/DECLARE ALL TASK HANDLES
 // **************************************************
@@ -134,37 +138,47 @@ void task_imu(void *parameter)
     Serial.println("[IMU] accel calibration done");
   }
 
+  // Run gyro integration fast for stable rate control.
   TickType_t lastWake = xTaskGetTickCount();
-  const TickType_t period = 50 / portTICK_PERIOD_MS; // 20 Hz
+  TickType_t period = pdMS_TO_TICKS(5); // 200 Hz
+  if (period == 0)
+    period = 1;
+
+  uint32_t lastMagMs = 0;
+  uint32_t lastPrintMs = 0;
 
   for (;;)
   {
-    float ax, ay, az;
-    float gx, gy, gz;
-    int16_t mx, my, mz;
-    float head;
-    float tempC, pres;
-
-    imu.getAccel_raw(&ax, &ay, &az);
+    float gx = NAN, gy = NAN, gz = NAN;
     imu.getGyro_raw(&gx, &gy, &gz);
-    imu.getMag_raw(&mx, &my, &mz, &head);
-    imu.getEnv(&tempC, &pres);
 
-    // Update yaw estimate (gyro+mag complementary filter) using the same gyro/mag values we just read
-    imu.updateYawComplementaryFrom(gz, head);
-    const float yaw_PureCompass = head;
-    const float yaw_PureGyro = imu.getYawGyro_deg();
-    const float yaw_Complementary = imu.getYaw_deg();
+    // Convert to yaw rate in deg/s.
+    // Note: IMU yaw integration uses yaw = yaw + gz_deg_s*dt, so yaw_rate (deg/s) consistent with yaw is gz.
+    const float yawRate_dps = gz * (180.0f / PI);
+    if (isfinite(yawRate_dps))
+    {
+      g_yawRateMeasured_dps = yawRate_dps;
+      g_lastYawRateUpdate_us = micros();
+    }
 
-    // Rate-limited debug output (SerialPlot friendly)
-    Serial.printf("ax:%.2f ay:%.2f az:%.2f gx:%.3f gy:%.3f gz:%.3f mx:%d my:%d mz:%d yaw_PureCompass:%.1f yaw_PureGyro:%.1f yaw_Complementary:%.1f t:%.2f p:%.2f\n",
-                  ax, ay, az,
-                  gx, gy, gz,
-                  (int)mx, (int)my, (int)mz,
-                  yaw_PureCompass,
-                  yaw_PureGyro,
-                  yaw_Complementary,
-                  tempC, pres);
+    // Read magnetometer at a slower rate to reduce I2C load; integrate gyro every loop.
+    float heading_deg = NAN;
+    if (imu.hasMag() && (millis() - lastMagMs) >= 50)
+    {
+      int16_t mx, my, mz;
+      float head;
+      imu.getMag_raw(&mx, &my, &mz, &head);
+      heading_deg = head;
+      lastMagMs = millis();
+    }
+
+    imu.updateYawComplementaryFrom(gz, heading_deg);
+
+    if ((millis() - lastPrintMs) >= 200)
+    {
+      lastPrintMs = millis();
+      Serial.printf("[IMU] yawRate=%.1f dps yaw=%.1f deg\n", yawRate_dps, imu.getYaw_deg());
+    }
 
     vTaskDelayUntil(&lastWake, period);
   }
@@ -174,10 +188,33 @@ void task_motorManagement(void *parameter)
 {
   MotorMixer *mixer = static_cast<MotorMixer *>(parameter);
 
+  PIDController yawRatePid;
+  yawRatePid.init(
+      global_YawRatePid_Kp,
+      global_YawRatePid_Ki,
+      global_YawRatePid_Kd,
+      global_YawRatePid_OutputLimit,
+      global_YawRatePid_IntegratorLimit);
+
   ControlSetpoints mySetPoint{0, 0, 0, false, false};
+
+  TickType_t lastWake = xTaskGetTickCount();
+  const uint32_t controlPeriodMs = (uint32_t)(1000.0f / global_ControlLoopRate_Hz);
+  TickType_t controlPeriodTicks = pdMS_TO_TICKS(controlPeriodMs);
+  if (controlPeriodTicks == 0)
+    controlPeriodTicks = 1;
+  uint32_t lastUpdateUs = micros();
 
   for (;;)
   {
+    const uint32_t nowUs = micros();
+    float dt_s = (nowUs - lastUpdateUs) * 1e-6f;
+    lastUpdateUs = nowUs;
+    if (!isfinite(dt_s) || dt_s < 0.001f)
+      dt_s = 0.001f;
+    if (dt_s > 0.05f)
+      dt_s = 0.05f;
+
     if (g_controlQueue != nullptr)
     {
       // Non blocking receive, timeout 0 ticks
@@ -191,9 +228,31 @@ void task_motorManagement(void *parameter)
     // Enforce emergency override at MotorCtrl level as well.
     motorCtrl.setMotorsEnabled(mySetPoint.motorsEnabled);
 
+    // Compute yaw rate setpoint from steering input.
+    // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
+    const float yawRateSetpoint_dps = (constrain(mySetPoint.diffThrust, -100.0f, 100.0f) / 100.0f) * global_MaxYawRateSetpoint_dps;
+
+    const uint32_t lastGyroUs = g_lastYawRateUpdate_us;
+    const bool gyroFresh = (lastGyroUs != 0) && ((nowUs - lastGyroUs) < 50000); // 50ms freshness
+    const float yawRateMeasured_dps = gyroFresh ? g_yawRateMeasured_dps : 0.0f;
+
+    float diffCmd = 0.0f;
+    if (mySetPoint.motorsEnabled && gyroFresh)
+    {
+      diffCmd = yawRatePid.update(yawRateSetpoint_dps, yawRateMeasured_dps, dt_s);
+      diffCmd = constrain(diffCmd, -100.0f, 100.0f);
+    }
+    else
+    {
+      yawRatePid.reset();
+      diffCmd = 0.0f;
+    }
+
     if (!mySetPoint.motorsEnabled)
     {
-      mixer->setLift(0.0f);
+      // Keep the selected lift setpoint latched even while disarmed,
+      // so arming immediately applies the preselected lift percentage.
+      mixer->setLift(mySetPoint.liftEnabled ? mySetPoint.lift : 0.0f);
       mixer->setDiffThrust(0.0f);
       mixer->setThrust(0.0f);
     }
@@ -211,12 +270,12 @@ void task_motorManagement(void *parameter)
         mixer->setLift(mySetPoint.lift);
       }
 
-      // Thrust + steering should still work even if lift is OFF.
-      mixer->setDiffThrust(mySetPoint.diffThrust);
+      // Thrust + yaw-rate control should still work even if lift is OFF.
+      mixer->setDiffThrust(diffCmd);
       mixer->setThrust(mySetPoint.thrust);
     }
 
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    vTaskDelayUntil(&lastWake, controlPeriodTicks);
   }
 }
 
@@ -359,7 +418,9 @@ void setup()
 
   networkPiloting.setThrustCallback([](float thrustPercent)
                                     {
-    g_latestSetpoints.thrust = thrustPercent;
+    // Scale thrust so the web UI's full deflection (100%) maps to a configurable max thrust.
+    const float scaled = thrustPercent * (global_WebThrustPresetPercent / 100.0f);
+    g_latestSetpoints.thrust = constrain(scaled, -100.0f, 100.0f);
     if (g_controlQueue != nullptr)
     {
       xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
