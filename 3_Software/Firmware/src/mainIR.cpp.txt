@@ -14,7 +14,7 @@ void setup() {
   // Low resolution for maximum throughput; 8-bit keeps conversion short.
   analogReadResolution(8);
   // Fastest ADC clock divider; lower numbers increase sample rate.
-  analogSetClockDiv(1);
+  // analogSetClockDiv(1);
 
   Serial.begin(115200);
 }
@@ -26,7 +26,7 @@ void pollAdcAndLog() {
   latestSamples[2] = analogRead(kAdcPins[2]);
 
   // Lightweight periodic print every 10,000 samples to monitor values.
-  if (++loopCounter >= 100000) {
+  if (++loopCounter >= 10000) {
     loopCounter = 0;
     Serial.printf("A0=%u A1=%u A2=%u\n", latestSamples[0], latestSamples[1], latestSamples[2]);
   }

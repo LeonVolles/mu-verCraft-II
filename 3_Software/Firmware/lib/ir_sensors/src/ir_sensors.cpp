@@ -13,11 +13,12 @@ IRSensors *IRSensors::_instance = nullptr;
 #define RAD2DEG(x) ((x) * (180.0f / PI))
 #endif
 
-IRSensors::IRSensors(int pin1, int pin2, int pin3, float sensorDistance)
+IRSensors::IRSensors(int pin1, int pin2, int pin3, float sensorDistance_a, float sensorDistance_b)
     : _pin1(pin1),
       _pin2(pin2),
       _pin3(pin3),
-      _a(sensorDistance),
+      _a(sensorDistance_a),
+      _b(sensorDistance_b),
       _lastAlphaDeg(NAN),
       _lastVelPerp(NAN),
       _hasNewMeasurement(false),

@@ -89,8 +89,9 @@ extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter 
 // sensor positions
 // motor positions
 
-// IR sensor distance a (equilateral triangle side length)
+// IR Sensor distances in Isosceles triangle
 extern const float global_IRSensorDistance_a_meters;
+extern const float global_IRSensorDistance_b_meters;
 
 // IR-line sensor thresholds
 extern const float global_IRSensor_Threshold;

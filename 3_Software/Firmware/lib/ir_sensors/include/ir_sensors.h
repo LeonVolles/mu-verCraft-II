@@ -20,8 +20,8 @@
 class IRSensors
 {
 public:
-    // Constructor: you must pass sensor pins and sensor distance a (meters).
-    IRSensors(int pin1, int pin2, int pin3, float sensorDistance);
+    // Constructor: you must pass sensor pins and sensor distance a,b (meters).
+    IRSensors(int pin1, int pin2, int pin3, float sensorDistance_a, float sensorDistance_b);
 
     // Initialize pins and attach interrupts. Must be called in setup().
     void begin();
@@ -49,6 +49,7 @@ private:
 
     // Distance between neighboring sensors (meters).
     float _a;
+    float _b;
 
     // Last computed angle (degrees) and perpendicular velocity (m/s).
     float _lastAlphaDeg;

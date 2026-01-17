@@ -79,8 +79,9 @@ const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter 
 // *************************************************
 // Dimensions
 // *************************************************
-// IR Sensor distance a (actual definition)
-const float global_IRSensorDistance_a_meters = 1.0f; // TODO: distance between neighboring IR-sensors (equilateral triangle side length a)
+// IR Sensor distances in Isosceles triangle
+const float global_IRSensorDistance_a_meters = 0.07f; // triangle has equal sides of length a
+const float global_IRSensorDistance_b_meters = 0.06f; // triangle has base of length b
 
 // sensor positions
 // motor positions
@@ -89,4 +90,4 @@ const float global_IRSensorDistance_a_meters = 1.0f; // TODO: distance between n
 // Thresholds, limits, etc.
 // *************************************************
 // IR-line sensor thresholds
-const float global_IRSensor_Threshold = 0.7f; // example threshold value for IR sensors when a line is detected, adjust based on calibration
+const float global_IRSensor_Threshold = 150.0f; // black line over 150

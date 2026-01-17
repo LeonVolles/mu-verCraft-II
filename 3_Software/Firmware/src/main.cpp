@@ -39,7 +39,8 @@ IMU imu(global_ComplementaryFilter_yawAlpha);
 IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
                     (int)global_PIN_IR_SENSOR_FL,
                     (int)global_PIN_IR_SENSOR_FR,
-                    global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+                    global_IRSensorDistance_a_meters,
+                    global_IRSensorDistance_b_meters); // pins and distance a,b between sensors for an isosceles triangle
 
 // Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
 BatteryMonitor batteryMonitor;
@@ -65,7 +66,8 @@ TaskHandle_t taskH_Blink = NULL; // just for quick testing, delete later
 TaskHandle_t taskH_wifi = NULL;            // task: hosting the webserver/website to get user controls
 TaskHandle_t taskH_imu = NULL;             // task: reading IMU and applying filtering
 TaskHandle_t taskH_motorManagement = NULL; // task: gets Setpoint, calls Mixer, sends DShot-commands to MotorCtrl
-TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors, maybe calculating also rotation relative to the line
+TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors
+TaskHandle_t taskH_calcIrSensors = NULL;   // task: calculating angle+perpendicular velocity from IR-Sensor readings
 TaskHandle_t taskH_batteryMonitor = NULL;  // task: reading battery voltage/current, warning on low battery and capacity calculation
 
 // **************************************************
@@ -209,6 +211,33 @@ void task_motorManagement(void *parameter)
 }
 
 void task_irSensors(void *parameter)
+{
+  // Read IR sensors and save to internal state
+
+  for (;;)
+  {
+    // Check if the ISRs have completed a full measurement set
+    if (irSensors.hasNewMeasurement())
+    {
+      float alpha = irSensors.getAlphaToLine();
+      float vPerp = irSensors.getVelocityPerpToLine();
+
+      // Clear the flag so we don't read the same event multiple times
+      irSensors.consumeNewMeasurement();
+
+      // For now: Debug output.
+      // Later: Send this to a Navigation/Control Queue.
+      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+    }
+
+    // Polling interval. Since line crossings are short events handled by ISRs,
+    // this task just needs to pick up the results frequently enough not to miss
+    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+  }
+}
+
+void task_calcIrSensors(void *parameter)
 {
   // If you need to access the global object, you can just use 'irSensors' directly,
   // or pass it via parameter if you prefer strict encapsulation.
