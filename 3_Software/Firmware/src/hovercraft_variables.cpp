@@ -54,8 +54,8 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // Wifi SSID, PW, IP Adressen (define here when needed)
 // *************************************************
 // Website IP-Adress: http://192.168.4.1/
-static const char *AP_SSID = "µ-verCraft-II AP";
-static const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
+const char *AP_SSID = "µ-verCraft-II AP";
+const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
 
 // *************************************************
 // Gyro/IMU/Complementary filter settings
