@@ -90,17 +90,6 @@ void task_wifiManager(void *parameter)
 {
   for (;;)
   {
-    // // Here you would read the latest user inputs
-    // ControlSetpoints mySetPoint;
-    // mySetPoint.lift = 40.0f; // replace with actual values from web UI
-    // mySetPoint.thrust = 25.0f;
-    // mySetPoint.diffThrust = 10.0f;
-
-    // if (g_controlQueue != nullptr)
-    // {
-    //   xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
-    // }
-
     // Cleanup websocket clients (Async server handles everything else)
     networkPiloting.loop();
 
