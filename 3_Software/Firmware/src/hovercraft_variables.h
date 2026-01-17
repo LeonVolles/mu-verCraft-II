@@ -61,6 +61,8 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 // *************************************************
 // Wifi SSID, PW, IP Adressen
 // *************************************************
+extern const char *AP_SSID;
+extern const char *AP_PASSWORD;
 
 // *************************************************
 // Gyro/IMU/Complementary filter settings
