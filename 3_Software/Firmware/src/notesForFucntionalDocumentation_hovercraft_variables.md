@@ -1,13 +1,14 @@
-# hovercraft_variables (global project settings)
+<!-- Note, it is intentionnal that the first heading starts as a "level2"/## and not as level1/# and should be kept like this!! -->
+## hovercraft_variables (global project settings)
 
-## Main idea
+### Main idea
 This file is the single place to tune the hovercraft: pin assignments, control loop tuning, and user-facing presets are centralized here so you don’t have to hunt through every subsystem.
 
-## Where it is used / how it is called
+### Where it is used / how it is called
 - Declarations live in [src/hovercraft_variables.h](src/hovercraft_variables.h) and the actual values are defined in [src/hovercraft_variables.cpp](src/hovercraft_variables.cpp).
 - Almost every subsystem consumes these values indirectly, but the main wiring is done in [src/main.cpp](src/main.cpp) when objects are constructed and initialized.
 
-## ********** Define all IO-Pins **********
+### Define all IO-Pins 
 These constants define how the ESP32 is wired to the hardware. If the wiring changes, change values here.
 
 - `LED_PIN` (int)
@@ -30,7 +31,7 @@ These constants define how the ESP32 is wired to the hardware. If the wiring cha
 	- Intended I2C pin definitions for sensors.
 	- Note: the current IMU implementation starts I2C via `Wire.begin((int)SDA_PIN,(int)SCL_PIN)` if the macros `SDA_PIN`/`SCL_PIN` are defined, otherwise it calls `Wire.begin()` defaults (see [lib/imu/src/imu.cpp](lib/imu/src/imu.cpp)). These globals are currently not referenced directly.
 
-## ********** Battery related limits and variables **********
+### Battery related limits and variables 
 These constants configure how ADC readings are converted into real battery voltage/current, plus optional low-voltage thresholds.
 
 - `global_BatteryVoltage_VoltageDividerRatio` (float)
@@ -56,7 +57,7 @@ These constants configure how ADC readings are converted into real battery volta
 	- Intended hard cutoff threshold where motors should stop.
 	- Note: currently not enforced automatically; you can implement a failsafe in the motor task or battery task based on this.
 
-## ********** Motor control variables **********
+### Motor control variables 
 These variables define motor output scaling and direction conventions.
 
 - `global_AllMotorsScalePercent` (float, %)
@@ -72,7 +73,7 @@ These variables define motor output scaling and direction conventions.
 	- Passed into `motorCtrl.init(...)` in [src/main.cpp](src/main.cpp) so that “positive thrust” matches the physical direction of the mounted propellers.
 	- These are non-`const` globals, but in the current firmware they are effectively “startup configuration”.
 
-## ********** Web piloting / UI presets **********
+### Web piloting / UI presets 
 These values define what the web UI offers (presets) and how user input is interpreted.
 
 - `global_WebLiftPresetPercent_Array[]` (float array, %)
@@ -91,7 +92,7 @@ These values define what the web UI offers (presets) and how user input is inter
 	- Scales the maximum thrust command coming from the web UI.
 	- Implemented in the thrust callback in [src/main.cpp](src/main.cpp): `scaled = thrustPercent * (preset/100)`.
 
-## ********** Wifi SSID, PW, IP Adressen **********
+### Wifi SSID, PW, IP Adressen 
 These parameters configure the ESP32 SoftAP and the webserver port.
 
 - `global_WifiApSsid` (char[])
@@ -106,7 +107,7 @@ These parameters configure the ESP32 SoftAP and the webserver port.
 	- TCP port for the embedded webserver (typically 80).
 	- Used to construct the webserver inside `NetworkPiloting` (see [lib/network_piloting/src/network_piloting.cpp](lib/network_piloting/src/network_piloting.cpp)).
 
-## ********** Gyro/IMU/Complementary filter settings **********
+### Gyro/IMU/Complementary filter settings 
 These values tune the IMU yaw estimation.
 
 - `global_ComplementaryFilter_yawAlpha` (float, unitless)
@@ -114,14 +115,14 @@ These values tune the IMU yaw estimation.
 	- Used when constructing the IMU and when configuring the filter in the IMU task in [src/main.cpp](src/main.cpp).
 	- Typical range is 0…1.
 
-## ********** Control loop constants **********
+### Control loop constants 
 These define timing of the main control loop.
 
 - `global_ControlLoopRate_Hz` (float, Hz)
 	- Target frequency of the motor/control task loop.
 	- Used to compute the periodic delay in `task_motorManagement` in [src/main.cpp](src/main.cpp).
 
-## ********** pid; **********
+### PID controller constants 
 Yaw-rate control tuning parameters.
 
 - `global_YawRatePid_Kp`, `global_YawRatePid_Ki`, `global_YawRatePid_Kd` (float)
@@ -137,18 +138,4 @@ Yaw-rate control tuning parameters.
 - `global_MaxYawRateSetpoint_dps` (float, deg/s)
 	- Maps full steering input (±100%) to a yaw-rate setpoint.
 	- Used in [src/main.cpp](src/main.cpp): `yawRateSetpoint_dps = (steeringPercent/100) * maxYawRate`.
-
-## ********** filter?? **********
-Currently no variables are defined in this block (placeholder for future filters).
-
-## ********** Dimensions **********
-Geometry values needed by algorithms that depend on the physical build.
-
-- `global_IRSensorDistance_a_meters` (float, meters)
-	- Side length `a` of the equilateral triangle formed by the 3 IR sensors.
-	- Used by the IR sensor math to compute angle to the line and lateral speed (see [lib/ir_sensors/src/ir_sensors.cpp](lib/ir_sensors/src/ir_sensors.cpp)).
-
-- `global_IRSensor_Threshold` (float)
-	- Intended threshold for “line detected” decisions.
-	- Note: the current IR sensor implementation uses digital interrupts (FALLING edges) and does not reference this threshold yet.
 

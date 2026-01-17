@@ -37,18 +37,19 @@ const float global_BatteryCurrent_VoltageDividerRatio = 1.0f;    // current sens
 // Example: scale=130 => 13 mV/A => Current(A) = Sensor_mV / 13
 const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 130.0f; // from the ESC datasheet
 
-const float global_BatteryVoltageLow_WarningLow = 7.4f;     // warning with LED/Wifi when below this voltage, for 2s LiPo ~3.70V per cell
-const float global_BatteryVoltageLow_MotorCutoffLow = 7.0f; // motors should stop turning below this voltage, for 2s LiPo ~3.50V per cell
+const float global_BatteryVoltageLow_WarningLow = 7.0f;          // low battery indicator threshold, for 2s LiPo = 3.50V per cell
+const float global_BatteryVoltageLow_MotorCutoffLow = 6.2f;      // motor cutoff threshold, for 2s LiPo = 3.10V per cell
+const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 20; // motors are disabled if below cutoff for more than this many samples
 
 // *************************************************
 // Motor control variables (actual definitions)
 // *************************************************
-const float global_AllMotorsScalePercent = 40.0f;                              // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
-const float global_NegativeRpmScaleFactor = 2.0f;                              // reverse-direction compensation (applied to negative motor commands)
+const float global_AllMotorsScalePercent = 40.0f;                                // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+const float global_NegativeRpmScaleFactor = 2.0f;                                // reverse-direction compensation (applied to negative motor commands)
 const float global_WebLiftPresetPercent_Array[] = {45.0f, 60.0f, 75.0f, 100.0f}; // lift presets for web UI selection
 const size_t global_WebLiftPresetPercent_Array_len = sizeof(global_WebLiftPresetPercent_Array) / sizeof(global_WebLiftPresetPercent_Array[0]);
-const int global_WebLiftPresetPercent_Array_startIndex = 1;                      // e.g. 1 -> first preset is 60% after startup (startup is always 0)
-const float global_WebThrustPresetPercent = 50.0f;                             // percent thrust, when in web UI "full forward" mode is 100%, this is still scaled with global_AllMotorsScalePercent!!
+const int global_WebLiftPresetPercent_Array_startIndex = 1; // e.g. 1 -> first preset is 60% after startup (startup is always 0)
+const float global_WebThrustPresetPercent = 50.0f;          // percent thrust, when in web UI "full forward" mode is 100%, this is still scaled with global_AllMotorsScalePercent!!
 
 bool global_MotorsReversedFL = true;  // Flag: if true, all Front Left motor commands are reversed
 bool global_MotorsReversedFR = false; // Flag: if true, all Front Right motor commands are reversed
@@ -58,7 +59,6 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // *************************************************
 // Wifi SSID, PW, IP Adressen
 // *************************************************
-
 const char global_WifiApSsid[] = "µ-verCraft-II AP";
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 // Note: WebUi/Website: 192.168.4.1
@@ -92,10 +92,6 @@ const float global_YawRatePid_IntegratorLimit = 50.0f;
 
 // Betaflight-style max yaw rate at full input deflection.
 const float global_MaxYawRateSetpoint_dps = 3.0f * 360.0f;
-
-// *************************************************
-// filter??
-// *************************************************
 
 // *************************************************
 // Dimensions

@@ -45,8 +45,9 @@ extern const float global_BatteryCurrent_VoltageDividerRatio;
 extern const float global_BatteryCurrent_SensorScaler_AmpsPerVolt;
 
 // Cutoff/warning voltages
-extern const float global_BatteryVoltageLow_WarningLow;     // warning with LED/Wifi when below this voltage
-extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should stop turning below this voltage
+extern const float global_BatteryVoltageLow_WarningLow;            // warning with LED/Wifi when below this voltage
+extern const float global_BatteryVoltageLow_MotorCutoffLow;        // motors should stop turning below this voltage
+extern const uint16_t global_BatteryVoltageLow_MotorCutoffSamples; // motors are disabled if below cutoff for more than this many samples
 
 // *************************************************
 // Motor control variables
@@ -104,7 +105,7 @@ extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter 
 extern const float global_ControlLoopRate_Hz;
 
 // *************************************************
-// pid;
+// PID controller constants
 // *************************************************
 
 // Yaw RATE PID (setpoint is yaw rate in deg/s).
@@ -120,10 +121,6 @@ extern const float global_YawRatePid_IntegratorLimit;
 
 // Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
 extern const float global_MaxYawRateSetpoint_dps;
-
-// *************************************************
-// filter??
-// *************************************************
 
 // *************************************************
 // Dimensions

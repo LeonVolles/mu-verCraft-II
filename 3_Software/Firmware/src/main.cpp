@@ -45,6 +45,10 @@ IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
 // Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
 BatteryMonitor batteryMonitor;
 
+// Low-battery safety flags (set by battery task, read by other tasks).
+static volatile bool g_lowBatteryLedSolidOn = false;
+static volatile bool g_lowBatteryMotorCutoff = false;
+
 // Struct+Queue for communication between WIFI-Control and Motor Management
 struct ControlSetpoints
 {
@@ -80,6 +84,14 @@ void task_blink(void *parameter)
 {
   for (;;)
   { // Infinite loop
+    if (g_lowBatteryLedSolidOn)
+    {
+      // Low battery indicator: keep LED solid ON.
+      digitalWrite(LED_PIN, HIGH);
+      vTaskDelay(200 / portTICK_PERIOD_MS);
+      continue;
+    }
+
     digitalWrite(LED_PIN, HIGH);
     // Serial.println("task_blink: LED ON");
     vTaskDelay(1000 / portTICK_PERIOD_MS); // 1000ms
@@ -224,9 +236,12 @@ void task_motorManagement(void *parameter)
       }
     }
 
+    // Battery safety gate: if cutoff is active, force motors OFF regardless of user arming.
+    const bool effectiveMotorsEnabled = mySetPoint.motorsEnabled && !g_lowBatteryMotorCutoff;
+
     // Apply whatever values are in mySetPoint (last known setpoints)
     // Enforce emergency override at MotorCtrl level as well.
-    motorCtrl.setMotorsEnabled(mySetPoint.motorsEnabled);
+    motorCtrl.setMotorsEnabled(effectiveMotorsEnabled);
 
     // Compute yaw rate setpoint from steering input.
     // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
@@ -237,7 +252,7 @@ void task_motorManagement(void *parameter)
     const float yawRateMeasured_dps = gyroFresh ? g_yawRateMeasured_dps : 0.0f;
 
     float diffCmd = 0.0f;
-    if (mySetPoint.motorsEnabled && gyroFresh)
+    if (effectiveMotorsEnabled && gyroFresh)
     {
       diffCmd = yawRatePid.update(yawRateSetpoint_dps, yawRateMeasured_dps, dt_s);
       diffCmd = constrain(diffCmd, -100.0f, 100.0f);
@@ -248,7 +263,7 @@ void task_motorManagement(void *parameter)
       diffCmd = 0.0f;
     }
 
-    if (!mySetPoint.motorsEnabled)
+    if (!effectiveMotorsEnabled)
     {
       // Keep the selected lift setpoint latched even while disarmed,
       // so arming immediately applies the preselected lift percentage.
@@ -312,6 +327,9 @@ void task_batteryMonitor(void *parameter)
 {
   (void)parameter;
 
+  uint16_t cutoffSampleCount = 0;
+  bool cutoffLatched = false;
+
   for (;;)
   {
     batteryMonitor.update();
@@ -328,6 +346,50 @@ void task_batteryMonitor(void *parameter)
 
     // Push latest battery telemetry to all connected web clients.
     networkPiloting.sendTelemetry(v, a, mah);
+
+    // Low battery indicator: LED stays solid ON below the configured warning threshold.
+    g_lowBatteryLedSolidOn = (v > 0.0f) && (v < global_BatteryVoltageLow_WarningLow);
+
+    // Motor cutoff: if voltage is below cutoff for more than N samples, force motors OFF.
+    if ((v > 0.0f) && (v < global_BatteryVoltageLow_MotorCutoffLow))
+    {
+      if (cutoffSampleCount < 0xFFFF)
+      {
+        cutoffSampleCount++;
+      }
+    }
+    else
+    {
+      cutoffSampleCount = 0;
+    }
+
+    const bool cutoffNow = cutoffSampleCount > global_BatteryVoltageLow_MotorCutoffSamples;
+    g_lowBatteryMotorCutoff = cutoffNow;
+
+    // On first entry into cutoff, actively disarm and reset setpoints so recovery doesn't auto-spin motors.
+    if (cutoffNow && !cutoffLatched)
+    {
+      cutoffLatched = true;
+
+      g_latestSetpoints.motorsEnabled = false;
+      g_latestSetpoints.liftEnabled = false;
+      g_latestSetpoints.lift = 0.0f;
+      g_latestSetpoints.thrust = 0.0f;
+      g_latestSetpoints.diffThrust = 0.0f;
+
+      if (g_controlQueue != nullptr)
+      {
+        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+      }
+
+      motorCtrl.setMotorsEnabled(false);
+      Serial.println("[BAT] Low voltage cutoff: motors disabled");
+    }
+
+    if (!cutoffNow)
+    {
+      cutoffLatched = false;
+    }
 
     // Relatively large delta_t is fine; update() integrates using millis().
     vTaskDelay(1000 / portTICK_PERIOD_MS);

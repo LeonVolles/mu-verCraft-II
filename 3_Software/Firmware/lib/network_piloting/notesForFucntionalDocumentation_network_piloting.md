@@ -14,13 +14,13 @@ This module hosts a small, embedded controller webpage and a WebSocket endpoint 
 
 ### Functionalities implemented
 
-#### Website (UI + transport)
+#### Website UI
 - **Embedded controller page:** the HTML/CSS/JS UI is stored in flash (`PROGMEM`) and served for `/`, `/controller.html`, and as a fallback for unknown routes.
 - **WebSocket link (`/ws`):** the browser opens a WebSocket and sends JSON messages like `{ "lift": 60, "thrust": -10, "steering": 25, "motorsEnabled": true }`.
 - **Telemetry to UI:** the firmware can broadcast compact JSON frames to all clients (currently battery voltage/current/used mAh).
 - **Client-side safety UX:** the page springs controls back to zero on pointer release and also resets on tab blur / page hidden / WS disconnect.
 
-#### “Intelligence / math” (control semantics + safety)
+#### Control semantics + safety
 - **Input shaping on the webpage:** the drag pads map pointer position to a normalized command in $[-100,100]$ with a deadzone and an expo curve (smooth low-sensitivity near center).
 - **Lift presets:** the UI toggles lift through a preset list; the preset values and start index are injected by the firmware at page-serve time.
 - **Fail-safe on disconnect:** on WebSocket disconnect, the firmware forces `motorsEnabled=false` and calls the user callbacks with `lift=0`, `thrust=0`, `steering=0`.

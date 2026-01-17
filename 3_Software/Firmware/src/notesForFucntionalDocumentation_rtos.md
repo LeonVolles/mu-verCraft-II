@@ -1,5 +1,4 @@
 <!-- Note, it is intentionnal that the first heading starts as a "level2"/## and not as level1/# and should be kept like this!! -->
-
 ## RTOS (FreeRTOS on ESP32)
 
 ### For people that are new to multi-threading
