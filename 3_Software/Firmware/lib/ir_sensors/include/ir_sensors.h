@@ -82,7 +82,7 @@ private:
 
     // Time window (microseconds) within which all three sensors must
     // fire to be considered a valid single crossing event.
-    static constexpr uint32_t CROSSING_TIMEOUT_US = 5000; // ~5 ms
+    static constexpr uint32_t CROSSING_TIMEOUT_US = 50000000; // 50 seconds
 
     // Timestamp of the first trigger in the current crossing.
     volatile uint32_t _crossingStart_us;
@@ -93,7 +93,9 @@ private:
     volatile uint32_t _sensorTimes[3][SENSOR_BUFFER_SIZE];
     volatile uint16_t _sensorWriteIdx;
     volatile uint16_t _sensorCount;
-    bool _sensorAbove[3];
+    bool _armed[3];          // true when re-armed (below lower threshold)
+    uint8_t _prevValue[3];   // last sample per sensor
+    bool _prevInit[3];       // tracks first-sample init per sensor
 
     // Sample queue for task-safe producer/consumer between fast ADC poller and slower processor.
     struct Sample
@@ -101,7 +103,7 @@ private:
         float v[3];
         uint32_t t[3];
     };
-    static constexpr uint16_t SAMPLE_QUEUE_LEN = 1000;
+    static constexpr uint32_t SAMPLE_QUEUE_LEN = 100000;
     QueueHandle_t _sampleQueue;
 
     // Internal helpers

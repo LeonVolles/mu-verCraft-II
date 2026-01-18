@@ -279,11 +279,11 @@ void task_batteryMonitor(void *parameter)
     const float a = batteryMonitor.getCurrent();
     const float mah = batteryMonitor.getMAH();
 
-    Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
-                  xPortGetCoreID(),
-                  v,
-                  a,
-                  mah);
+    //Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+                //   xPortGetCoreID(),
+                //   v,
+                //   a,
+                //   mah);
 
     // Push latest battery telemetry to all connected web clients.
     networkPiloting.sendTelemetry(v, a, mah);

@@ -92,4 +92,4 @@ const float global_IRSensorDistance_b_meters = 0.06f; // triangle has base of le
 // IR-line sensor thresholds
 const float global_IRSensor_Threshold = 150.0f; // black line over 150
 const float global_IRSensor_Hysteresis = 10.0f; // hysteresis for line detection
-const float global_IRSensor_Timeout_us = 2000.0f; // timeout in microseconds for incomplete crossings
+const float global_IRSensor_Timeout_us = 20000000.0f; // timeout in microseconds for incomplete crossings (20 seconds)
