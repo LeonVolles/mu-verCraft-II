@@ -80,10 +80,6 @@ private:
     volatile bool _t2_valid;
     volatile bool _t3_valid;
 
-    // Time window (microseconds) within which all three sensors must
-    // fire to be considered a valid single crossing event.
-    static constexpr uint32_t CROSSING_TIMEOUT_US = 50000000; // 50 seconds
-
     // Timestamp of the first trigger in the current crossing.
     volatile uint32_t _crossingStart_us;
 
