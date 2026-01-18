@@ -96,6 +96,15 @@ extern const uint16_t global_WebServerPort;
 extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter alpha, high = trust gyro more
 
 // *************************************************
+// Magnetometer calibration (hard-iron offsets)
+// *************************************************
+// Offsets are in RAW magnetometer units (same units returned by DFRobot_QMC5883::readRaw()).
+// Generate them by uploading src/magnetometer_calibration.cpp with -D MAGNETOMETER_CALIBRATION.
+extern const int16_t global_MagOffsetX;
+extern const int16_t global_MagOffsetY;
+extern const int16_t global_MagOffsetZ;
+
+// *************************************************
 // Control loop constants
 // *************************************************
 // extern const float f_loop;          // Hz
@@ -121,6 +130,18 @@ extern const float global_YawRatePid_IntegratorLimit;
 
 // Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
 extern const float global_MaxYawRateSetpoint_dps;
+
+// *************************************************
+// Heading (absolute yaw) controller constants
+// *************************************************
+// Outer loop for heading hold: input is heading error (deg), output is yaw-rate setpoint (deg/s).
+extern const float global_HeadingPid_Kp;
+extern const float global_HeadingPid_Ki;
+extern const float global_HeadingPid_Kd;
+
+// Limits for heading controller output (deg/s) and integrator (deg/s equivalent).
+extern const float global_HeadingPid_OutputLimit_dps;
+extern const float global_HeadingPid_IntegratorLimit_dps;
 
 // *************************************************
 // Dimensions

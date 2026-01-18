@@ -17,6 +17,7 @@
 #include <ir_sensors.h>
 #include <battery_monitor.h>
 #include <pid_controller.h>
+#include <heading_controller.h>
 #include <camera_placeholder.h>
 
 // **************************************************
@@ -65,6 +66,36 @@ static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false, false};
 static volatile float g_yawRateMeasured_dps = 0.0f;  // yaw rate (deg/s), sign consistent with IMU yaw integration
 static volatile uint32_t g_lastYawRateUpdate_us = 0; // micros() timestamp
 
+// Shared yaw heading estimate from the complementary filter (deg, typically 0..360).
+static volatile float g_yawMeasured_deg = 0.0f;
+static volatile uint32_t g_lastYawUpdate_us = 0; // micros() timestamp
+
+// New mode: heading hold (triggered via web UI "M" button).
+static volatile bool g_headingHoldActive = false;
+static volatile float g_headingTarget_deg = 0.0f;
+
+static inline float wrap360_local(float deg)
+{
+  if (!isfinite(deg))
+    return 0.0f;
+  while (deg >= 360.0f)
+    deg -= 360.0f;
+  while (deg < 0.0f)
+    deg += 360.0f;
+  return deg;
+}
+
+static void setHeading(float heading_deg)
+{
+  g_headingTarget_deg = wrap360_local(heading_deg);
+  g_headingHoldActive = true;
+}
+
+static void cancelHeadingHold()
+{
+  g_headingHoldActive = false;
+}
+
 // **************************************************
 // DEFINE/DECLARE ALL TASK HANDLES
 // **************************************************
@@ -105,6 +136,8 @@ void task_blink(void *parameter)
 
 void task_wifiManager(void *parameter)
 {
+  static uint32_t lastHeadingMs = 0;
+
   for (;;)
   {
     // // Here you would read the latest user inputs
@@ -120,6 +153,18 @@ void task_wifiManager(void *parameter)
 
     // Cleanup websocket clients (Async server handles everything else)
     networkPiloting.loop();
+
+    // Push current heading to the web UI at a modest rate.
+    const uint32_t nowMs = millis();
+    if ((nowMs - lastHeadingMs) >= 200)
+    {
+      lastHeadingMs = nowMs;
+      const float yawDeg = g_yawMeasured_deg;
+      if (isfinite(yawDeg))
+      {
+        networkPiloting.sendHeading(yawDeg);
+      }
+    }
 
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
@@ -165,7 +210,8 @@ void task_imu(void *parameter)
     imu.getGyro_raw(&gx, &gy, &gz);
 
     // Convert to yaw rate in deg/s.
-    // Note: IMU yaw integration uses yaw = yaw + gz_deg_s*dt, so yaw_rate (deg/s) consistent with yaw is gz.
+    // Note: We keep the existing yaw-rate sign convention used by the inner yaw-rate controller.
+    // (It may differ from the yaw angle integration sign; the controller/mixer convention wins here.)
     const float yawRate_dps = gz * (180.0f / PI);
     if (isfinite(yawRate_dps))
     {
@@ -182,14 +228,32 @@ void task_imu(void *parameter)
       imu.getMag_raw(&mx, &my, &mz, &head);
       heading_deg = head;
       lastMagMs = millis();
+
+      // For debugging:
+      // print magnetometer-based heading, gyro-Integrated heading and complementary filter results#
+      // Serial.printf("[IMU] Mag Heading=%.1f deg, Gyro Integrated Yaw=%.1f deg, Comp Filter Yaw=%.1f deg\n",
+      //               heading_deg,
+      //               imu.getYawGyro_deg(),
+      //               imu.getYaw_deg());
+
+      // Mag, Gyro, Comp
+      Serial.printf("%0.2f,%0.2f,%0.2f\n", heading_deg, imu.getYawGyro_deg(), imu.getYaw_deg());
     }
 
     imu.updateYawComplementaryFrom(gz, heading_deg);
 
+    // Share heading estimate for controllers.
+    const float yaw_deg = imu.getYaw_deg();
+    if (isfinite(yaw_deg))
+    {
+      g_yawMeasured_deg = yaw_deg;
+      g_lastYawUpdate_us = micros();
+    }
+
     if ((millis() - lastPrintMs) >= 200)
     {
       lastPrintMs = millis();
-      Serial.printf("[IMU] yawRate=%.1f dps yaw=%.1f deg\n", yawRate_dps, imu.getYaw_deg());
+      // Serial.printf("[IMU] yawRate=%.1f dps yaw=%.1f deg\n", yawRate_dps, imu.getYaw_deg());
     }
 
     vTaskDelayUntil(&lastWake, period);
@@ -207,6 +271,16 @@ void task_motorManagement(void *parameter)
       global_YawRatePid_Kd,
       global_YawRatePid_OutputLimit,
       global_YawRatePid_IntegratorLimit);
+
+  HeadingController headingPid;
+  headingPid.init(
+      global_HeadingPid_Kp,
+      global_HeadingPid_Ki,
+      global_HeadingPid_Kd,
+      global_HeadingPid_OutputLimit_dps,
+      global_HeadingPid_IntegratorLimit_dps);
+
+  bool lastHeadingHoldActive = false;
 
   ControlSetpoints mySetPoint{0, 0, 0, false, false};
 
@@ -245,11 +319,37 @@ void task_motorManagement(void *parameter)
 
     // Compute yaw rate setpoint from steering input.
     // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
-    const float yawRateSetpoint_dps = (constrain(mySetPoint.diffThrust, -100.0f, 100.0f) / 100.0f) * global_MaxYawRateSetpoint_dps;
+    float yawRateSetpoint_dps = (constrain(mySetPoint.diffThrust, -100.0f, 100.0f) / 100.0f) * global_MaxYawRateSetpoint_dps;
 
     const uint32_t lastGyroUs = g_lastYawRateUpdate_us;
     const bool gyroFresh = (lastGyroUs != 0) && ((nowUs - lastGyroUs) < 50000); // 50ms freshness
     const float yawRateMeasured_dps = gyroFresh ? g_yawRateMeasured_dps : 0.0f;
+
+    const bool headingHold = g_headingHoldActive;
+    if (headingHold && !lastHeadingHoldActive)
+    {
+      headingPid.reset();
+    }
+    lastHeadingHoldActive = headingHold;
+
+    const uint32_t lastYawUs = g_lastYawUpdate_us;
+    const bool yawFresh = (lastYawUs != 0) && ((nowUs - lastYawUs) < 150000); // 150ms freshness
+    const float yawMeasured_deg = yawFresh ? g_yawMeasured_deg : 0.0f;
+
+    if (headingHold)
+    {
+      // Outer loop: heading error -> yaw-rate setpoint (deg/s).
+      // Keep the inner loop unchanged.
+      if (yawFresh && gyroFresh)
+      {
+        yawRateSetpoint_dps = headingPid.update(g_headingTarget_deg, yawMeasured_deg, yawRateMeasured_dps, dt_s);
+      }
+      else
+      {
+        headingPid.reset();
+        yawRateSetpoint_dps = 0.0f;
+      }
+    }
 
     float diffCmd = 0.0f;
     if (effectiveMotorsEnabled && gyroFresh)
@@ -313,7 +413,7 @@ void task_irSensors(void *parameter)
 
       // For now: Debug output.
       // Later: Send this to a Navigation/Control Queue.
-      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+      // Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
     }
 
     // Polling interval. Since line crossings are short events handled by ISRs,
@@ -338,11 +438,11 @@ void task_batteryMonitor(void *parameter)
     const float a = batteryMonitor.getCurrent();
     const float mah = batteryMonitor.getMAH();
 
-    Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
-                  xPortGetCoreID(),
-                  v,
-                  a,
-                  mah);
+    // Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+    //               xPortGetCoreID(),
+    //               v,
+    //               a,
+    //               mah);
 
     // Push latest battery telemetry to all connected web clients.
     networkPiloting.sendTelemetry(v, a, mah);
@@ -470,49 +570,67 @@ void setup()
 
   networkPiloting.setLiftCallback([](float liftPercent)
                                   {
-    g_latestSetpoints.lift = liftPercent;
-    g_latestSetpoints.liftEnabled = (liftPercent > 0.0f);
-    if (g_controlQueue != nullptr)
-    {
-      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-    }
-    Serial.printf("Lift=%.1f%%\n", liftPercent); });
+                                    g_latestSetpoints.lift = liftPercent;
+                                    g_latestSetpoints.liftEnabled = (liftPercent > 0.0f);
+                                    if (g_controlQueue != nullptr)
+                                    {
+                                      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+                                    }
+                                    // Serial.printf("Lift=%.1f%%\n", liftPercent);
+                                  });
 
   networkPiloting.setThrustCallback([](float thrustPercent)
                                     {
-    // Scale thrust so the web UI's full deflection (100%) maps to a configurable max thrust.
-    const float scaled = thrustPercent * (global_WebThrustPresetPercent / 100.0f);
-    g_latestSetpoints.thrust = constrain(scaled, -100.0f, 100.0f);
-    if (g_controlQueue != nullptr)
-    {
-      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-    }
-    Serial.printf("Thrust=%.1f%%\n", thrustPercent); });
+                                      // Scale thrust so the web UI's full deflection (100%) maps to a configurable max thrust.
+                                      const float scaled = thrustPercent * (global_WebThrustPresetPercent / 100.0f);
+                                      g_latestSetpoints.thrust = constrain(scaled, -100.0f, 100.0f);
+                                      if (g_controlQueue != nullptr)
+                                      {
+                                        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+                                      }
+                                      // Serial.printf("Thrust=%.1f%%\n", thrustPercent);
+                                    });
 
   networkPiloting.setSteeringCallback([](float steeringPercent)
                                       {
-    g_latestSetpoints.diffThrust = steeringPercent;
-    if (g_controlQueue != nullptr)
-    {
-      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-    }
-    Serial.printf("Steering=%.1f%%\n", steeringPercent); });
+                                        g_latestSetpoints.diffThrust = steeringPercent;
+                                        if (g_controlQueue != nullptr)
+                                        {
+                                          xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+                                        }
+                                        // Serial.printf("Steering=%.1f%%\n", steeringPercent);
+                                      });
 
   networkPiloting.setArmCallback([](bool enabled)
                                  {
-    g_latestSetpoints.motorsEnabled = enabled;
-    if (!enabled)
+                                   g_latestSetpoints.motorsEnabled = enabled;
+                                   if (!enabled)
+                                   {
+                                     g_latestSetpoints.lift = 0.0f;
+                                     g_latestSetpoints.thrust = 0.0f;
+                                     g_latestSetpoints.diffThrust = 0.0f;
+                                     g_latestSetpoints.liftEnabled = false;
+                                   }
+                                   if (g_controlQueue != nullptr)
+                                   {
+                                     xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+                                   }
+                                   // Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
+                                 });
+
+  networkPiloting.setAutoModeCallback([](bool enabled)
+                                      {
+    if (enabled)
     {
-      g_latestSetpoints.lift = 0.0f;
-      g_latestSetpoints.thrust = 0.0f;
-      g_latestSetpoints.diffThrust = 0.0f;
-      g_latestSetpoints.liftEnabled = false;
+      // Temporary behavior: pressing the M button triggers a fixed heading target.
+      setHeading(160.0f);
+      Serial.println("[AUTO] autoMode ON -> setHeading(160)");
     }
-    if (g_controlQueue != nullptr)
+    else
     {
-      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-    }
-    Serial.printf("Motors %s\n", enabled ? "ON" : "OFF"); });
+      cancelHeadingHold();
+      Serial.println("[AUTO] autoMode OFF -> back to manual steering");
+    } });
 
   networkPiloting.begin();
 

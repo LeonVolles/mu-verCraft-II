@@ -88,12 +88,14 @@ void MotorMixer::updateOutputs()
     backLeft = constrain(backLeft, -100.0f, 100.0f);
     backRight = constrain(backRight, -100.0f, 100.0f);
 
-    // make sure, the back-motors do not bug around, due to beeing to close to zero (deadband of at least 5%)
-    if (fabs(backLeft) < 5.0f)
+    // Rear-motor deadband: avoid jitter around 0, but keep it small enough
+    // so heading-hold can still apply gentle counter-torque near the setpoint.
+    constexpr float rearDeadbandPercent = 2.0f;
+    if (fabs(backLeft) < rearDeadbandPercent)
     {
         backLeft = 0.0f;
     }
-    if (fabs(backRight) < 5.0f)
+    if (fabs(backRight) < rearDeadbandPercent)
     {
         backRight = 0.0f;
     }

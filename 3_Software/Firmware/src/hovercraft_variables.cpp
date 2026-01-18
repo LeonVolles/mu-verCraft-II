@@ -37,9 +37,9 @@ const float global_BatteryCurrent_VoltageDividerRatio = 1.0f;    // current sens
 // Example: scale=130 => 13 mV/A => Current(A) = Sensor_mV / 13
 const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 130.0f; // from the ESC datasheet
 
-const float global_BatteryVoltageLow_WarningLow = 7.0f;          // low battery indicator threshold, for 2s LiPo = 3.50V per cell
-const float global_BatteryVoltageLow_MotorCutoffLow = 6.2f;      // motor cutoff threshold, for 2s LiPo = 3.10V per cell
-const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 20; // motors are disabled if below cutoff for more than this many samples
+const float global_BatteryVoltageLow_WarningLow = 7.2f;         // low battery indicator threshold, for 2s LiPo = 3.50V per cell
+const float global_BatteryVoltageLow_MotorCutoffLow = 6.4f;     // motor cutoff threshold, for 2s LiPo = 3.10V per cell
+const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 4; // motors are disabled if below cutoff for more than this many samples
 
 // *************************************************
 // Motor control variables (actual definitions)
@@ -67,7 +67,19 @@ const uint16_t global_WebServerPort = 80;
 // *************************************************
 // Gyro/IMU/Complementary filter settings
 // *************************************************
-const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more
+const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more, old 0.9f
+
+// *************************************************
+// Magnetometer calibration (hard-iron offsets)
+// *************************************************
+// Replace these values with the output of MagCalibrator tool found in 3_Software of this git repo
+// const int16_t global_MagOffsetX = -689;
+// const int16_t global_MagOffsetY = 342;
+// const int16_t global_MagOffsetZ = 6;
+
+const int16_t global_MagOffsetX = -734;
+const int16_t global_MagOffsetY = -22;
+const int16_t global_MagOffsetZ = -517;
 
 // *************************************************
 // Control loop constants (example, if you enable them)
@@ -92,6 +104,19 @@ const float global_YawRatePid_IntegratorLimit = 50.0f;
 
 // Betaflight-style max yaw rate at full input deflection.
 const float global_MaxYawRateSetpoint_dps = 3.0f * 360.0f;
+
+// *************************************************
+// Heading (absolute yaw) controller constants
+// *************************************************
+// Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
+// Start with conservative gains; tune on hardware.
+const float global_HeadingPid_Kp = 25.0f; // 6
+const float global_HeadingPid_Ki = 0.0f;  // 0
+const float global_HeadingPid_Kd = 0.0f;  // 0.3
+
+// Limit yaw-rate request from heading-hold to keep it smooth.
+const float global_HeadingPid_OutputLimit_dps = 90.0f;
+const float global_HeadingPid_IntegratorLimit_dps = 45.0f;
 
 // *************************************************
 // Dimensions

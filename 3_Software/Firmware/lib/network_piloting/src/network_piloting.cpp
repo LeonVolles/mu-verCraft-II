@@ -120,6 +120,20 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			box-shadow: none;
 		}
 		.mode-btn:active { transform: translateY(1px); }
+		.heading-box {
+			width: 26px;
+			height: 26px;
+			border-radius: 8px;
+			border: 1px solid rgba(255,255,255,0.10);
+			background: rgba(255,255,255,0.04);
+			color: rgba(255,255,255,0.78);
+			font-weight: 800;
+			font-size: 12px;
+			line-height: 26px;
+			text-align: center;
+			font-variant-numeric: tabular-nums;
+			user-select: none;
+		}
 		.metric {
 			display: inline-flex;
 			align-items: center;
@@ -272,7 +286,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			<div class="topbar">
 				<button id="liftBtn" class="lift-btn off" style="justify-self:flex-start;">Lift OFF</button>
 				<div class="metric" id="metricBatt">Batt: --.- V</div>
-				<div class="status" style="justify-self:center;"><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span><button id="modeBtn" class="mode-btn" type="button" title="Autonomous mode (coming soon)" disabled>M</button></div>
+				<div class="status" style="justify-self:center;"><span id="headingBox" class="heading-box">---</span><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span><button id="modeBtn" class="mode-btn" type="button" title="Autonomous mode (coming soon)" disabled>M</button></div>
 				<div class="metric" id="metricCurrent">Used: --- mAh</div>
 				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
 			</div>
@@ -313,6 +327,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		const steerPad = document.getElementById('steerPad');
 		const wsStatus = document.getElementById('wsStatus');
 		const wsDot = document.getElementById('wsDot');
+		const headingBox = document.getElementById('headingBox');
 		const modeBtn = document.getElementById('modeBtn');
 		const armBtn = document.getElementById('armBtn');
 		const liftBtn = document.getElementById('liftBtn');
@@ -321,7 +336,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 
 		let ws;
 		let sendPending = false;
-		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false };
+		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false, autoMode: false };
 		let autoModeRequested = false;
 		// Track active pointer IDs to make "spring back to 0" reliable on mobile.
 		// (Otherwise, a late range 'input' event can overwrite the reset.)
@@ -389,6 +404,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			ws.onclose = () => {
 				setStatus('Reconnecting...', false);
 				modeBtn.disabled = true;
+				state.autoMode = false;
 				setAutoModeUi(false);
 				updateBatteryUi(NaN);
 				state.motorsEnabled = false;
@@ -408,6 +424,10 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			ws.onmessage = (evt) => {
 				try {
 					const data = JSON.parse(evt.data);
+					if (typeof data.yaw === 'number' && isFinite(data.yaw)) {
+						const deg = Math.round(((data.yaw % 360) + 360) % 360);
+						headingBox.textContent = String(deg);
+					}
 					if (typeof data.thrust === 'number') {
 						state.thrust = data.thrust;
 						thrust.value = data.thrust;
@@ -574,8 +594,9 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		});
 
 		modeBtn.addEventListener('click', () => {
-			// UI-only for now; actual autonomous mode behavior will be implemented next.
-			setAutoModeUi(!autoModeRequested);
+			state.autoMode = !state.autoMode;
+			setAutoModeUi(state.autoMode);
+			sendState(true);
 		});
 
 		liftBtn.addEventListener('click', () => {
@@ -600,7 +621,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-NetworkPiloting::NetworkPiloting() : server_(global_WebServerPort), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
+NetworkPiloting::NetworkPiloting() : server_(global_WebServerPort), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false), autoModeRequested_(false) {}
 
 void NetworkPiloting::begin()
 {
@@ -672,6 +693,11 @@ void NetworkPiloting::setArmCallback(const std::function<void(bool)> &callback)
 	onArm_ = callback;
 }
 
+void NetworkPiloting::setAutoModeCallback(const std::function<void(bool)> &callback)
+{
+	onAutoMode_ = callback;
+}
+
 float NetworkPiloting::getLift() const
 {
 	return lift_;
@@ -692,6 +718,11 @@ bool NetworkPiloting::motorsEnabled() const
 	return motorsEnabled_;
 }
 
+bool NetworkPiloting::autoModeRequested() const
+{
+	return autoModeRequested_;
+}
+
 void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
 	if (type == WS_EVT_CONNECT)
@@ -704,6 +735,7 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 	{
 		// Fail-safe: drop motors and zero controls on disconnect
 		applyArm(false);
+		autoModeRequested_ = false;
 		if (onThrust_)
 		{
 			onThrust_(0.0f);
@@ -799,6 +831,25 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 			}
 		}
 
+		int autoPos = payload.indexOf("\"autoMode\"");
+		if (autoPos != -1)
+		{
+			int colon = payload.indexOf(':', autoPos);
+			if (colon != -1)
+			{
+				bool enable = payload.substring(colon + 1).startsWith("true");
+				if (enable != autoModeRequested_)
+				{
+					autoModeRequested_ = enable;
+					if (onAutoMode_)
+					{
+						onAutoMode_(enable);
+					}
+				}
+				updated = true;
+			}
+		}
+
 		if (updated)
 		{
 			server->textAll(String("{\"lift\":") + String(lift_, 1) +
@@ -828,4 +879,17 @@ void NetworkPiloting::sendTelemetry(float voltage, float current, float usedMah)
 	ws_.textAll(String("{\"batt\":") + String(voltage, 2) +
 				",\"curr\":" + String(current, 2) +
 				",\"mah\":" + String(usedMah, 0) + "}");
+}
+
+void NetworkPiloting::sendHeading(float heading_deg)
+{
+	if (ws_.count() == 0)
+	{
+		return;
+	}
+	if (!isfinite(heading_deg))
+	{
+		return;
+	}
+	ws_.textAll(String("{\"yaw\":") + String(heading_deg, 1) + "}");
 }
