@@ -1,5 +1,7 @@
 #include <Arduino.h>
 
+#include <math.h>
+
 // RTOS includes
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -264,6 +266,25 @@ void task_motorManagement(void *parameter)
 {
   MotorMixer *mixer = static_cast<MotorMixer *>(parameter);
 
+  auto yawRateSetpointFromSteeringPercent_dps = [](float steeringPercent) -> float
+  {
+    // Betaflight-style "Actual Rates" inspired mapping.
+    // Input: steeringPercent in [-100..100]. Output: yaw-rate setpoint in deg/s.
+    const float stick = constrain(steeringPercent, -100.0f, 100.0f) * 0.01f; // -1..1
+    const float a = fabsf(stick);
+
+    const float maxRate_dps = fmaxf(0.0f, global_MaxYawRateSetpoint_dps);
+    float center_dps = fmaxf(0.0f, global_YawCenterSensitivity);
+    if (center_dps > maxRate_dps)
+      center_dps = maxRate_dps;
+
+    const float expo = constrain(global_YawRateExpo, 0.0f, 1.0f);
+    const float p = 3.0f + 2.0f * expo; // expo=0 -> cubic, expo=1 -> quintic
+
+    const float rateAbs_dps = center_dps * a + (maxRate_dps - center_dps) * powf(a, p);
+    return (stick < 0.0f) ? -rateAbs_dps : rateAbs_dps;
+  };
+
   PIDController yawRatePid;
   yawRatePid.init(
       global_YawRatePid_Kp,
@@ -319,7 +340,7 @@ void task_motorManagement(void *parameter)
 
     // Compute yaw rate setpoint from steering input.
     // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
-    float yawRateSetpoint_dps = (constrain(mySetPoint.diffThrust, -100.0f, 100.0f) / 100.0f) * global_MaxYawRateSetpoint_dps;
+    float yawRateSetpoint_dps = yawRateSetpointFromSteeringPercent_dps(mySetPoint.diffThrust);
 
     const uint32_t lastGyroUs = g_lastYawRateUpdate_us;
     const bool gyroFresh = (lastGyroUs != 0) && ((nowUs - lastGyroUs) < 50000); // 50ms freshness
@@ -623,8 +644,8 @@ void setup()
     if (enabled)
     {
       // Temporary behavior: pressing the M button triggers a fixed heading target.
-      setHeading(160.0f);
-      Serial.println("[AUTO] autoMode ON -> setHeading(160)");
+      setHeading(10.0f);
+      Serial.println("[AUTO] autoMode ON -> setHeading(10)");
     }
     else
     {

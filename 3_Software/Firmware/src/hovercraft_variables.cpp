@@ -37,9 +37,9 @@ const float global_BatteryCurrent_VoltageDividerRatio = 1.0f;    // current sens
 // Example: scale=130 => 13 mV/A => Current(A) = Sensor_mV / 13
 const float global_BatteryCurrent_SensorScaler_AmpsPerVolt = 130.0f; // from the ESC datasheet
 
-const float global_BatteryVoltageLow_WarningLow = 7.2f;         // low battery indicator threshold, for 2s LiPo = 3.50V per cell
-const float global_BatteryVoltageLow_MotorCutoffLow = 6.4f;     // motor cutoff threshold, for 2s LiPo = 3.10V per cell
-const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 4; // motors are disabled if below cutoff for more than this many samples
+const float global_BatteryVoltageLow_WarningLow = 7.2f;          // low battery indicator threshold, for 2s LiPo = 3.50V per cell
+const float global_BatteryVoltageLow_MotorCutoffLow = 6.4f;      // motor cutoff threshold, for 2s LiPo = 3.10V per cell
+const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 20; // motors are disabled if below cutoff for more than this many samples
 
 // *************************************************
 // Motor control variables (actual definitions)
@@ -102,20 +102,27 @@ const float global_YawRatePid_OutputLimit = 100.0f;
 // Integral clamp in same units as output.
 const float global_YawRatePid_IntegratorLimit = 50.0f;
 
-// Betaflight-style max yaw rate at full input deflection.
-const float global_MaxYawRateSetpoint_dps = 3.0f * 360.0f;
+// *************************************************
+// Rates = responsiveness of the sliders
+// *************************************************
+// Betaflight-style max yaw rate at full input deflection
+// look up online "betaflight actual rates" for more information
+// Also, there is a file under 3_Software/rates.html that allows to visualize the response curve
+const float global_MaxYawRateSetpoint_dps = 2.0f * 360.0f; // 2 full rotations per second = 720 deg/s
+const float global_YawRateExpo = 0.40f;                    // expo for yaw rate response curve
+const float global_YawCenterSensitivity = 450.0f;          // sensitivity around center for small deflections
 
 // *************************************************
 // Heading (absolute yaw) controller constants
 // *************************************************
 // Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
 // Start with conservative gains; tune on hardware.
-const float global_HeadingPid_Kp = 25.0f; // 6
+const float global_HeadingPid_Kp = 45.0f; // 6
 const float global_HeadingPid_Ki = 0.0f;  // 0
 const float global_HeadingPid_Kd = 0.0f;  // 0.3
 
 // Limit yaw-rate request from heading-hold to keep it smooth.
-const float global_HeadingPid_OutputLimit_dps = 90.0f;
+const float global_HeadingPid_OutputLimit_dps = 100.0f;
 const float global_HeadingPid_IntegratorLimit_dps = 45.0f;
 
 // *************************************************

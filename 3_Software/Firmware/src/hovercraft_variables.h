@@ -128,8 +128,12 @@ extern const float global_YawRatePid_OutputLimit;
 // Clamp for integral term (in the same units as output).
 extern const float global_YawRatePid_IntegratorLimit;
 
-// Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
-extern const float global_MaxYawRateSetpoint_dps;
+// Betaflight-style Actual Rates parameters for yaw.
+// - global_YawCenterSensitivity: slope near center in deg/s (per full-stick unit)
+// - global_YawRateExpo: shapes the transition from center sensitivity to max rate (0..1)
+extern const float global_MaxYawRateSetpoint_dps; // Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
+extern const float global_YawCenterSensitivity;
+extern const float global_YawRateExpo;
 
 // *************************************************
 // Heading (absolute yaw) controller constants

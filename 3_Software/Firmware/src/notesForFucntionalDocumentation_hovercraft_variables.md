@@ -137,5 +137,16 @@ Yaw-rate control tuning parameters.
 
 - `global_MaxYawRateSetpoint_dps` (float, deg/s)
 	- Maps full steering input (±100%) to a yaw-rate setpoint.
-	- Used in [src/main.cpp](src/main.cpp): `yawRateSetpoint_dps = (steeringPercent/100) * maxYawRate`.
+	- Used in [src/main.cpp](src/main.cpp) to compute the yaw-rate setpoint from the user steering slider.
+
+- `global_YawCenterSensitivity` (float, deg/s)
+	- “Center sensitivity” for the yaw command curve: sets how responsive yaw feels for *small* steering deflections.
+	- Interpreted as the approximate slope around stick/slider center (0%).
+	- Used in [src/main.cpp](src/main.cpp) to shape the mapping from steering percent to yaw-rate setpoint.
+
+- `global_YawRateExpo` (float, unitless, 0…1)
+	- “Expo” shaping for the yaw command curve: higher expo makes the response softer around center and ramps up more strongly towards full deflection.
+	- Used together with `global_YawCenterSensitivity` and `global_MaxYawRateSetpoint_dps` to compute the yaw-rate setpoint from the user steering slider.
+	- Used in [src/main.cpp](src/main.cpp) in the yaw setpoint mapping.
+	- **Visualization tool:** there is a curve visualizer at `3_Software/rates.html` (open it in a browser) to inspect the response curve.
 
