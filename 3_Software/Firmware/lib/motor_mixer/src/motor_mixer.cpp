@@ -69,31 +69,34 @@ void MotorMixer::updateOutputs()
     float frontLeft = lift;
     float frontRight = lift;
 
-    // Rear motors get thrust plus differential thrust
+    // Rear motors: thrust plus ABSOLUTE differential
+    // - Keeps the *average* rear output equal to `thrust`.
+    // - Allows turning on the spot when `thrust == 0` by driving one motor forward and the other reverse.
+    // - Each motor output is allowed in the full range -100..+100.
     float thrust = constrain(m_thrust, -100.0f, 100.0f);
     float diff = constrain(m_diffThrustBalance, -100.0f, 100.0f);
 
-    // Absolute value defines total rear power, sign defines direction
-    float base = fabs(thrust);                         // 0..100
-    float direction = (thrust >= 0.0f) ? 1.0f : -1.0f; // forward or reverse
+    // Absolute differential authority (in percent). Tune as needed.
+    constexpr float diffAbsMaxPercent = 30.0f;
+    float delta = (diff / 100.0f) * diffAbsMaxPercent;
 
-    // Differential thrust is applied proportionally
-    // diff = 0   -> both rear motors get the same power
-    // diff = 100 -> left motor full power, right motor zero
-    // diff = -100 -> right motor full power, left motor zero
-    float d = diff / 100.0f;
+    // diff = 100  -> left = thrust + 30, right = thrust - 30
+    // diff = -100 -> left = thrust - 30, right = thrust + 30
+    float backLeft = thrust + delta;
+    float backRight = thrust - delta;
 
-    float backLeft = base * (1.0f + d);
-    float backRight = base * (1.0f - d);
+    backLeft = constrain(backLeft, -100.0f, 100.0f);
+    backRight = constrain(backRight, -100.0f, 100.0f);
 
-    // Clamp to valid range 0..100 before applying direction
-    backLeft = constrain(backLeft, 0.0f, 100.0f);
-    backRight = constrain(backRight, 0.0f, 100.0f);
-
-    // Apply common direction to both rear motors
-    backLeft *= direction;
-    backRight *= direction;
-
+    // make sure, the back-motors do not bug around, due to beeing to close to zero (deadband of at least 5%)
+    if (fabs(backLeft) < 5.0f)
+    {
+        backLeft = 0.0f;
+    }
+    if (fabs(backRight) < 5.0f)
+    {
+        backRight = 0.0f;
+    }
     // Send to MotorCtrl
     m_motorCtrl.setAllPercent(frontLeft, frontRight, backLeft, backRight);
 }

@@ -20,13 +20,19 @@
 #include "network_piloting.h"
 #include <pgmspace.h>
 
+// Defined in src/hovercraft_variables.cpp (project-level config)
+extern const float global_WebLiftPresetPercent_Array[];
+extern const size_t global_WebLiftPresetPercent_Array_len;
+extern const int global_WebLiftPresetPercent_Array_startIndex;
+extern const uint16_t global_WebServerPort;
+
 // Embedded controller page so no external filesystem is required
 static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 	<title>Hovercraft Control</title>
 	<style>
 		:root {
@@ -39,6 +45,12 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			--muted: #8ea2c2;
 			--shadow: rgba(0, 0, 0, 0.45);
 		}
+		html, body {
+			height: 100%;
+			overflow: hidden;
+			overscroll-behavior: none;
+			touch-action: none;
+		}
 		* { box-sizing: border-box; }
 		body {
 			margin: 0;
@@ -50,6 +62,10 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			align-items: center;
 			justify-content: center;
 			padding: 0;
+			-webkit-text-size-adjust: 100%;
+			-webkit-user-select: none;
+			user-select: none;
+			-webkit-touch-callout: none;
 		}
 		.card {
 			position: relative;
@@ -131,7 +147,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			width: 100%;
 			margin: 12px 0 4px;
 			-webkit-appearance: none;
-			height: 7px;
+			height: 14px;
 			background: linear-gradient(90deg, var(--accent), var(--accent-2));
 			border-radius: 12px;
 			outline: none;
@@ -140,8 +156,8 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		.range::-webkit-slider-thumb {
 			-webkit-appearance: none;
 			appearance: none;
-			width: 24px;
-			height: 24px;
+			width: 44px;
+			height: 44px;
 			background: #0b1321;
 			border-radius: 50%;
 			border: 3px solid var(--accent);
@@ -151,7 +167,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		}
 		.range:active::-webkit-slider-thumb { transform: scale(1.05); }
 		.vertical-wrap { display: flex; justify-content: center; align-items: center; height: 100%; }
-		.vertical-range { writing-mode: bt-lr; transform: rotate(-90deg); width: 200px; height: 42px; }
+		.vertical-range { writing-mode: bt-lr; transform: rotate(-90deg); width: 260px; height: 54px; }
 		.controls-row {
 			display: flex;
 			align-items: center;
@@ -160,11 +176,13 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			margin-top: 8px;
 		}
 		.joystick-slot {
-			width: 200px;
-			height: 200px;
+			width: 260px;
+			height: 260px;
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			touch-action: none;
+			user-select: none;
 		}
 		.video-frame {
 			flex: 1;
@@ -191,8 +209,8 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			background: linear-gradient(90deg, rgba(255,255,255,0.15), rgba(255,255,255,0.15));
 			box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
 			writing-mode: horizontal-tb;
-			width: 180px;
-			height: 42px;
+			width: 240px;
+			height: 54px;
 			transform: none;
 		}
 		.range.steer-range::-webkit-slider-thumb {
@@ -221,7 +239,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
 			</div>
 			<div class="controls-row">
-				<div class="joystick-slot">
+				<div class="joystick-slot" id="thrustPad">
 					<div class="vertical-wrap">
 						<input id="thrust" class="range vertical-range thrust-range" type="range" min="-100" max="100" step="1" value="0" />
 					</div>
@@ -229,7 +247,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 				<div class="video-frame">
 					<div class="video-inner"></div>
 				</div>
-				<div class="joystick-slot">
+				<div class="joystick-slot" id="steerPad">
 					<div class="vertical-wrap">
 						<input id="steer" class="range steer-range" type="range" min="-100" max="100" step="1" value="0" />
 					</div>
@@ -238,8 +256,23 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		</div>
 
 	<script>
+		// Prevent accidental page scroll/zoom on mobile while piloting.
+		// (iOS Safari can still try pinch-zoom unless we block these.)
+		document.addEventListener('gesturestart', (e) => e.preventDefault());
+		document.addEventListener('gesturechange', (e) => e.preventDefault());
+		document.addEventListener('gestureend', (e) => e.preventDefault());
+		document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+		document.addEventListener('touchmove', (e) => {
+			// Allow native range dragging if the user directly grabs the slider.
+			const t = e.target;
+			if (t && (t.id === 'thrust' || t.id === 'steer')) return;
+			e.preventDefault();
+		}, { passive: false });
+
 		const thrust = document.getElementById('thrust');
 		const steer = document.getElementById('steer');
+		const thrustPad = document.getElementById('thrustPad');
+		const steerPad = document.getElementById('steerPad');
 		const wsStatus = document.getElementById('wsStatus');
 		const wsDot = document.getElementById('wsDot');
 		const armBtn = document.getElementById('armBtn');
@@ -250,20 +283,24 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		let ws;
 		let sendPending = false;
 		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false };
-		let thrustActive = false;
-		let steerActive = false;
-		const LIFT_PRESET = 60; // percent lift when toggle is on
-		let liftToggle = false;
+		// Track active pointer IDs to make "spring back to 0" reliable on mobile.
+		// (Otherwise, a late range 'input' event can overwrite the reset.)
+		const active = {
+			thrust: { down: false, pointerId: null },
+			steering: { down: false, pointerId: null }
+		};
+		const LIFT_PRESETS = __LIFT_PRESETS__; // injected JSON array (percent values)
+		const LIFT_START_INDEX = __LIFT_START_INDEX__;
+		let nextLiftPresetIndex = clamp(Number(LIFT_START_INDEX) || 0, 0, Math.max(0, LIFT_PRESETS.length - 1));
 
 		function updateLabels() {
 			armBtn.textContent = state.motorsEnabled ? 'Motors ON' : 'Motors OFF';
 			armBtn.classList.toggle('on', state.motorsEnabled);
 			armBtn.classList.toggle('off', !state.motorsEnabled);
-			const liftIsOn = Math.abs(state.lift - LIFT_PRESET) < 0.5;
-			liftToggle = liftIsOn;
-			liftBtn.textContent = liftToggle ? 'Lift ON' : 'Lift OFF';
-			liftBtn.classList.toggle('on', liftToggle);
-			liftBtn.classList.toggle('off', !liftToggle);
+			const liftPct = clamp(Number(state.lift) || 0, 0, 100);
+			liftBtn.textContent = `Lift ${Math.round(liftPct)}%`;
+			liftBtn.classList.toggle('on', liftPct > 0.5);
+			liftBtn.classList.toggle('off', liftPct <= 0.5);
 		}
 
 		function sendState(force = false) {
@@ -320,10 +357,6 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 					}
 					if (typeof data.motorsEnabled === 'boolean') {
 						state.motorsEnabled = data.motorsEnabled;
-						if (!state.motorsEnabled) {
-							state.lift = 0;
-							liftToggle = false;
-						}
 					}
 					if (typeof data.batt === 'number') {
 						metricBatt.textContent = `Batt: ${data.batt.toFixed(2)} V`;
@@ -338,40 +371,157 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 
 		function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
 
+		function setActive(prop, pointerId) {
+			active[prop].down = true;
+			active[prop].pointerId = pointerId;
+		}
+		function clearActive(prop) {
+			active[prop].down = false;
+			active[prop].pointerId = null;
+		}
+		function isActive(prop, pointerId) {
+			if (!active[prop].down) return false;
+			if (pointerId == null) return true;
+			return active[prop].pointerId === pointerId;
+		}
+		function resetControl(prop, el, forceSend = true) {
+			state[prop] = 0;
+			el.value = 0;
+			clearActive(prop);
+			updateLabels();
+			sendState(forceSend);
+		}
+
+		function resetAllControls(reason) {
+			// Only reset if something was actively controlled.
+			const anyActive = active.thrust.down || active.steering.down;
+			resetControl('thrust', thrust, anyActive);
+			resetControl('steering', steer, anyActive);
+		}
+
 		function addSpringControl(el, prop) {
 			el.addEventListener('input', (e) => {
+				// Some mobile browsers dispatch a final 'input' after pointerup.
+				// Ignore it unless this control is currently active.
+				if (!active[prop].down) return;
 				state[prop] = clamp(Number(e.target.value), -100, 100);
 				updateLabels();
 				sendState();
 			});
-			el.addEventListener('pointerdown', () => { if (prop === 'thrust') thrustActive = true; else steerActive = true; });
-			window.addEventListener('pointerup', () => {
-				if ((prop === 'thrust' && thrustActive) || (prop === 'steering' && steerActive)) {
-					state[prop] = 0;
-					el.value = 0;
-					if (prop === 'thrust') thrustActive = false; else steerActive = false;
-					updateLabels();
-					sendState();
+			el.addEventListener('pointerdown', (e) => {
+				setActive(prop, e.pointerId);
+				try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+			});
+			el.addEventListener('pointerup', (e) => {
+				if (!isActive(prop, e.pointerId)) return;
+				resetControl(prop, el, true);
+			});
+			el.addEventListener('pointercancel', (e) => {
+				if (!isActive(prop, e.pointerId)) return;
+				resetControl(prop, el, true);
+			});
+			el.addEventListener('lostpointercapture', () => {
+				if (!active[prop].down) return;
+				resetControl(prop, el, true);
+			});
+		}
+
+		// Drag-anywhere controls: you don't need to grab the thumb.
+		// This is much easier to manipulate without looking.
+		function addPadControl(padEl, sliderEl, prop, axis /* 'x' or 'y' */) {
+			if (!padEl) return;
+			const deadzone = 0.06; // fraction of full deflection
+			const expo = 0.35;     // 0..1; higher = softer near center
+
+			function applyExpo(n) {
+				// Smooth expo: mix linear with cubic.
+				return (1 - expo) * n + expo * n * n * n;
+			}
+
+			function updateFromEvent(e) {
+				const r = padEl.getBoundingClientRect();
+				let n = 0;
+				if (axis === 'y') {
+					// top = +1, bottom = -1
+					const y = (e.clientY - r.top);
+					n = -((y - r.height / 2) / (r.height / 2));
+				} else {
+					// left = -1, right = +1
+					const x = (e.clientX - r.left);
+					n = ((x - r.width / 2) / (r.width / 2));
 				}
+				n = clamp(n, -1, 1);
+				// deadzone
+				if (Math.abs(n) < deadzone) n = 0;
+				// expo
+				n = applyExpo(n);
+				const v = clamp(n * 100, -100, 100);
+				state[prop] = v;
+				sliderEl.value = v;
+				updateLabels();
+				sendState();
+			}
+
+			padEl.addEventListener('pointerdown', (e) => {
+				e.preventDefault();
+				padEl.setPointerCapture(e.pointerId);
+				setActive(prop, e.pointerId);
+				updateFromEvent(e);
+			});
+			padEl.addEventListener('pointermove', (e) => {
+				if (!isActive(prop, e.pointerId)) return;
+				updateFromEvent(e);
+			});
+			padEl.addEventListener('pointerup', (e) => {
+				if (!isActive(prop, e.pointerId)) return;
+				resetControl(prop, sliderEl, true);
+			});
+			padEl.addEventListener('pointercancel', () => {
+				resetControl(prop, sliderEl, true);
+			});
+			padEl.addEventListener('lostpointercapture', () => {
+				if (!active[prop].down) return;
+				resetControl(prop, sliderEl, true);
 			});
 		}
 
 		addSpringControl(thrust, 'thrust');
 		addSpringControl(steer, 'steering');
+		addPadControl(thrustPad, thrust, 'thrust', 'y');
+		addPadControl(steerPad, steer, 'steering', 'x');
+
+		// Safety: if the browser loses focus or the tab is backgrounded,
+		// always spring everything back to 0.
+		window.addEventListener('blur', () => resetAllControls('blur'));
+		document.addEventListener('visibilitychange', () => {
+			if (document.hidden) resetAllControls('hidden');
+		});
+		window.addEventListener('pointerup', (e) => {
+			// Fallback in case some elements don't receive pointerup.
+			if (isActive('thrust', e.pointerId)) resetControl('thrust', thrust, true);
+			if (isActive('steering', e.pointerId)) resetControl('steering', steer, true);
+		});
 
 		armBtn.addEventListener('click', () => {
 			state.motorsEnabled = !state.motorsEnabled;
 			if (!state.motorsEnabled) {
 				state.lift = 0;
-				liftToggle = false;
 			}
 			updateLabels();
 			sendState(true);
 		});
 
 		liftBtn.addEventListener('click', () => {
-			liftToggle = !liftToggle;
-			state.lift = liftToggle ? LIFT_PRESET : 0;
+			const liftPct = clamp(Number(state.lift) || 0, 0, 100);
+			if (liftPct > 0.5) {
+				// Turn lift off; advance preset index for the next ON toggle.
+				state.lift = 0;
+				nextLiftPresetIndex = (nextLiftPresetIndex + 1) % Math.max(1, LIFT_PRESETS.length);
+			} else {
+				// Turn lift on to next preset.
+				const v = Number(LIFT_PRESETS[nextLiftPresetIndex]) || 0;
+				state.lift = clamp(v, 0, 100);
+			}
 			updateLabels();
 			sendState(true);
 		});
@@ -383,20 +533,45 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-NetworkPiloting::NetworkPiloting() : server_(80), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
+NetworkPiloting::NetworkPiloting() : server_(global_WebServerPort), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false) {}
 
 void NetworkPiloting::begin()
 {
 	ws_.onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 				{ handleWebSocketEvent(server, client, type, arg, data, len); });
 
-	// Serve embedded page from flash
-	server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
-	server_.on("/controller.html", HTTP_GET, [](AsyncWebServerRequest *request)
-			   { request->send_P(200, "text/html", CONTROLLER_HTML); });
-	server_.onNotFound([](AsyncWebServerRequest *request)
-					   { request->send_P(200, "text/html", CONTROLLER_HTML); });
+	auto sendControllerHtml = [](AsyncWebServerRequest *request)
+	{
+		// We store the HTML in flash (PROGMEM) but inject a few tunables at runtime.
+		String page = FPSTR(CONTROLLER_HTML);
+
+		// Inject lift presets as a JSON array literal (e.g. [45,60,75]).
+		String presets = "[";
+		for (size_t i = 0; i < global_WebLiftPresetPercent_Array_len; i++)
+		{
+			presets += String(global_WebLiftPresetPercent_Array[i], 0);
+			if (i + 1 < global_WebLiftPresetPercent_Array_len)
+				presets += ",";
+		}
+		presets += "]";
+
+		int startIndex = global_WebLiftPresetPercent_Array_startIndex;
+		if (startIndex < 0)
+			startIndex = 0;
+		if (global_WebLiftPresetPercent_Array_len == 0)
+			startIndex = 0;
+		else if ((size_t)startIndex >= global_WebLiftPresetPercent_Array_len)
+			startIndex = (int)global_WebLiftPresetPercent_Array_len - 1;
+
+		page.replace("__LIFT_PRESETS__", presets);
+		page.replace("__LIFT_START_INDEX__", String(startIndex));
+		request->send(200, "text/html", page);
+	};
+
+	// Serve embedded page (with runtime-injected presets)
+	server_.on("/", HTTP_GET, sendControllerHtml);
+	server_.on("/controller.html", HTTP_GET, sendControllerHtml);
+	server_.onNotFound(sendControllerHtml);
 
 	server_.addHandler(&ws_);
 	server_.begin();
@@ -486,17 +661,6 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 		for (size_t i = 0; i < len; i++)
 		{
 			payload += static_cast<char>(data[i]);
-		}
-
-		int keyPos = payload.indexOf("\"lift\"");
-		if (keyPos == -1)
-		{
-			return;
-		}
-		int colonPos = payload.indexOf(':', keyPos);
-		if (colonPos == -1)
-		{
-			return;
 		}
 
 		// Parse fields independently (lightweight, no full JSON dep)
