@@ -25,6 +25,8 @@ extern const float global_WebLiftPresetPercent_Array[];
 extern const size_t global_WebLiftPresetPercent_Array_len;
 extern const int global_WebLiftPresetPercent_Array_startIndex;
 extern const uint16_t global_WebServerPort;
+extern const float global_BatteryVoltageLow_WarningLow;
+extern const float global_BatteryVoltageLow_MotorCutoffLow;
 
 // Embedded controller page so no external filesystem is required
 static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
@@ -92,6 +94,32 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			font-size: 14px;
 			justify-content: center;
 		}
+		.mode-btn {
+			width: 26px;
+			height: 26px;
+			padding: 0;
+			border-radius: 8px;
+			border: 1px solid rgba(255,255,255,0.10);
+			background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+			color: var(--text);
+			font-weight: 800;
+			font-size: 13px;
+			line-height: 26px;
+			cursor: pointer;
+			transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+		}
+		.mode-btn.on {
+			background: linear-gradient(135deg, #18c27a, #0fa35f);
+			border-color: rgba(62,213,152,0.45);
+			box-shadow: 0 10px 18px rgba(24,194,122,0.18);
+		}
+		.mode-btn:disabled {
+			opacity: 0.55;
+			cursor: not-allowed;
+			background: rgba(255,255,255,0.04);
+			box-shadow: none;
+		}
+		.mode-btn:active { transform: translateY(1px); }
 		.metric {
 			display: inline-flex;
 			align-items: center;
@@ -104,6 +132,16 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			font-size: 13px;
 			min-width: 120px;
 			justify-content: center;
+		}
+		.metric.batt-warn {
+			background: linear-gradient(135deg, rgba(163,91,0,0.55), rgba(88,44,0,0.60));
+			border-color: rgba(255,162,74,0.55);
+			color: #ffe2c2;
+		}
+		.metric.batt-cutoff {
+			background: linear-gradient(135deg, rgba(179,36,36,0.60), rgba(125,24,24,0.65));
+			border-color: rgba(255,92,92,0.55);
+			color: #ffe1e1;
 		}
 		.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 6px rgba(255,92,92,0.12); }
 		.dot.ok { background: #3ed598; box-shadow: 0 0 0 6px rgba(62,213,152,0.18); }
@@ -234,7 +272,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			<div class="topbar">
 				<button id="liftBtn" class="lift-btn off" style="justify-self:flex-start;">Lift OFF</button>
 				<div class="metric" id="metricBatt">Batt: --.- V</div>
-				<div class="status" style="justify-self:center;"><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span></div>
+				<div class="status" style="justify-self:center;"><div id="wsDot" class="dot"></div><span id="wsStatus">Connecting...</span><button id="modeBtn" class="mode-btn" type="button" title="Autonomous mode (coming soon)" disabled>M</button></div>
 				<div class="metric" id="metricCurrent">Used: --- mAh</div>
 				<button id="armBtn" class="arm-btn off" style="justify-self:flex-end;">Motors OFF</button>
 			</div>
@@ -275,6 +313,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		const steerPad = document.getElementById('steerPad');
 		const wsStatus = document.getElementById('wsStatus');
 		const wsDot = document.getElementById('wsDot');
+		const modeBtn = document.getElementById('modeBtn');
 		const armBtn = document.getElementById('armBtn');
 		const liftBtn = document.getElementById('liftBtn');
 		const metricBatt = document.getElementById('metricBatt');
@@ -283,6 +322,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		let ws;
 		let sendPending = false;
 		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false };
+		let autoModeRequested = false;
 		// Track active pointer IDs to make "spring back to 0" reliable on mobile.
 		// (Otherwise, a late range 'input' event can overwrite the reset.)
 		const active = {
@@ -291,7 +331,19 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 		};
 		const LIFT_PRESETS = __LIFT_PRESETS__; // injected JSON array (percent values)
 		const LIFT_START_INDEX = __LIFT_START_INDEX__;
+		const BATT_WARN_V = __BATT_WARN_V__;
+		const BATT_CUTOFF_V = __BATT_CUTOFF_V__;
 		let nextLiftPresetIndex = clamp(Number(LIFT_START_INDEX) || 0, 0, Math.max(0, LIFT_PRESETS.length - 1));
+
+		function updateBatteryUi(voltage) {
+			metricBatt.classList.remove('batt-warn', 'batt-cutoff');
+			if (typeof voltage !== 'number' || !isFinite(voltage)) return;
+			if (voltage <= Number(BATT_CUTOFF_V)) {
+				metricBatt.classList.add('batt-cutoff');
+			} else if (voltage <= Number(BATT_WARN_V)) {
+				metricBatt.classList.add('batt-warn');
+			}
+		}
 
 		function updateLabels() {
 			armBtn.textContent = state.motorsEnabled ? 'Motors ON' : 'Motors OFF';
@@ -319,17 +371,26 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			wsDot.classList.toggle('ok', ok);
 		}
 
+		function setAutoModeUi(on) {
+			autoModeRequested = !!on;
+			modeBtn.classList.toggle('on', autoModeRequested);
+		}
+
 		function connectWs() {
 			const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 			ws = new WebSocket(`${proto}://${location.host}/ws`);
 
 			ws.onopen = () => {
 				setStatus('Connected', true);
+				modeBtn.disabled = false;
 				sendState(true);
 			};
 
 			ws.onclose = () => {
 				setStatus('Reconnecting...', false);
+				modeBtn.disabled = true;
+				setAutoModeUi(false);
+				updateBatteryUi(NaN);
 				state.motorsEnabled = false;
 				state.thrust = 0;
 				state.steering = 0;
@@ -360,6 +421,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 					}
 					if (typeof data.batt === 'number') {
 						metricBatt.textContent = `Batt: ${data.batt.toFixed(2)} V`;
+						updateBatteryUi(data.batt);
 					}
 					if (typeof data.mah === 'number') {
 						metricCurrent.textContent = `Used: ${data.mah.toFixed(0)} mAh`;
@@ -511,6 +573,11 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			sendState(true);
 		});
 
+		modeBtn.addEventListener('click', () => {
+			// UI-only for now; actual autonomous mode behavior will be implemented next.
+			setAutoModeUi(!autoModeRequested);
+		});
+
 		liftBtn.addEventListener('click', () => {
 			const liftPct = clamp(Number(state.lift) || 0, 0, 100);
 			if (liftPct > 0.5) {
@@ -565,6 +632,8 @@ void NetworkPiloting::begin()
 
 		page.replace("__LIFT_PRESETS__", presets);
 		page.replace("__LIFT_START_INDEX__", String(startIndex));
+		page.replace("__BATT_WARN_V__", String(global_BatteryVoltageLow_WarningLow, 2));
+		page.replace("__BATT_CUTOFF_V__", String(global_BatteryVoltageLow_MotorCutoffLow, 2));
 		request->send(200, "text/html", page);
 	};
 
