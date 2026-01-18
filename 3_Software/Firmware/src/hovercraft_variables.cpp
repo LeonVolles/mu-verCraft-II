@@ -18,9 +18,9 @@ const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR = GPIO_NUM_9;
 const gpio_num_t global_PIN_BATTERY_CURRENT_MONITOR = GPIO_NUM_4;
 
 // IR-Sensor Pins
-const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_1; // Front-Left sensor
+const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_3; // Front-Left sensor
 const gpio_num_t global_PIN_IR_SENSOR_FR = GPIO_NUM_2; // Front-Right sensor
-const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_3; // Back sensor
+const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_1; // Back sensor
 
 // I2C Pins (GPIO5 = SDA, GPIO6 = SCL)
 const gpio_num_t global_PIN_I2C_SDA = GPIO_NUM_5;
@@ -54,7 +54,7 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // Wifi SSID, PW, IP Adressen (define here when needed)
 // *************************************************
 // Website IP-Adress: http://192.168.4.1/
-const char *AP_SSID = "µ-verCraft-II AP";
+const char *AP_SSID = "µ-verCraft-II AP2";
 const char *AP_PASSWORD = "Supmicrotech"; // minimum 8 chars for WPA2
 
 // *************************************************

@@ -212,7 +212,8 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
-    constexpr uint8_t kAdcPins[] = {1, 2, 3};  // Map these to your A0/A1/A2
+    // Order: index0=BM, index1=FL, index2=FR to match IRSensors detectLine mapping.
+    const int kAdcPins[] = {(int)global_PIN_IR_SENSOR_BM, (int)global_PIN_IR_SENSOR_FL, (int)global_PIN_IR_SENSOR_FR};
   uint8_t latestSamples[3];                  // Holds most recent 8-bit readings
   uint32_t latestTimestamps[3];              // Holds most recent timestamps in microseconds
   float latestSamplesF[3];                   // Float copy for queueing
@@ -235,7 +236,7 @@ void task_irSensors(void *parameter)
         latestSamples[2] = analogRead(kAdcPins[2]);
         latestTimestamps[2] = micros();
 
-        // Serial.printf("[task_irSensors] S1: %d (%lu us) | S2: %d (%lu us) | S3: %d (%lu us)\n",
+        // Serial.printf("[task_irSensors] BM: %d (%lu us) | FL: %d (%lu us) | FR: %d (%lu us)\n",
         //           latestSamples[0], (unsigned long)latestTimestamps[0],
         //           latestSamples[1], (unsigned long)latestTimestamps[1],
         //           latestSamples[2], (unsigned long)latestTimestamps[2]);
@@ -266,7 +267,7 @@ void task_calcIrSensors(void *parameter)
 
     const float alpha = irSensors.getAlphaToLine();
     const float vPerp = irSensors.getVelocityPerpToLine();
-    Serial.printf("[task_calcIrSensors] alpha=%.3f rad, v_perp=%.3f m/s\n", alpha, vPerp);
+    Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
 
     // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
     vTaskDelay(1000 / portTICK_PERIOD_MS);

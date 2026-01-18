@@ -39,23 +39,13 @@ IRSensors::IRSensors(int pin1, int pin2, int pin3, float sensorDistance_a, float
         _sensorAbove[0] = _sensorAbove[1] = _sensorAbove[2] = false;
 }
 
-// Initialize pins and interrupts.
+// Initialize pins and queue.
 void IRSensors::begin()
 {
-    _instance = this;
-
     if (_sampleQueue == nullptr)
     {
         _sampleQueue = xQueueCreate(SAMPLE_QUEUE_LEN, sizeof(Sample));
     }
-
-    pinMode(_pin1, INPUT_PULLUP);
-    pinMode(_pin2, INPUT_PULLUP);
-    pinMode(_pin3, INPUT_PULLUP);
-
-    attachInterrupt(digitalPinToInterrupt(_pin1), isrSensor1Trampoline, FALLING);
-    attachInterrupt(digitalPinToInterrupt(_pin2), isrSensor2Trampoline, FALLING);
-    attachInterrupt(digitalPinToInterrupt(_pin3), isrSensor3Trampoline, FALLING);
 }
 
 float IRSensors::getAlphaToLine() const
