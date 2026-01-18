@@ -21,6 +21,19 @@ This module provides a single interface to the hovercraft’s IMU sensors (accel
 - **Yaw complementary filter:** integrates gyro Z-rate at high rate and corrects drift toward magnetometer heading when available (`updateYawComplementaryFrom()`), using a tunable alpha.
 - **Yaw reset to magnetometer:** `resetYawToMag()` forces the filter to re-initialize yaw on the next update.
 
+### Heading convention / mounting correction (important)
+The magnetometer heading is **not** used “raw”. A hardcoded mounting correction is applied inside `IMU::getMag_raw()` to match the craft’s physical mounting and desired positive rotation direction.
+
+- Raw magnetometer heading (after declination) is computed from `atan2(Y, X)` and normalized to $[0, 360)$.
+- Then we apply the transform:
+	- `heading_corrected = wrap360(180 - heading_raw)`
+
+This single expression does two things:
+- **180° offset** (board mounted reversed: world 0° corresponds to craft 180°)
+- **Direction inversion** (so the heading increases in the desired “positive” rotation sense)
+
+Because this mapping inverts heading direction, the yaw complementary filter must use a **matching gyro integration sign** so that gyro prediction and magnetometer correction agree. This is handled inside `IMU::updateYawComplementaryFrom()`.
+
 ### Methods (overview)
 - `IMU(yawAlpha)` – constructs the sensor objects and sets yaw filter alpha.
 - `init()` – starts I2C, probes sensors, sets ranges/modes, and resets yaw filter state.

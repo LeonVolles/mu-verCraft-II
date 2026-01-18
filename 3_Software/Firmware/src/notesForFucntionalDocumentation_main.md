@@ -41,6 +41,10 @@ The firmware creates multiple tasks in `setup()` using `xTaskCreatePinnedToCore(
 - Reads gyro continuously; reads magnetometer slower (~20 Hz) and updates yaw complementary filter.
 - Publishes yaw rate (deg/s) to the shared variables for the control loop.
 
+**Heading sign / offset note:** the heading published to the UI and heading-hold (`g_yawMeasured_deg`) is a **mounting-corrected** magnetometer+gyro estimate. The IMU applies a hardcoded transform `heading_corrected = wrap360(180 - heading_raw)` so the displayed heading has the desired 180° offset and increases in the chosen positive rotation direction.
+
+If you later enable a non-zero heading-controller `Kd`, ensure the yaw-rate signal used for derivative-on-measurement has the **same sign convention** as the heading (positive yaw-rate means heading increasing).
+
 ##### task_motorManagement (core 1)
 - Runs the main control loop at `global_ControlLoopRate_Hz` using `vTaskDelayUntil`.
 - Non-blocking reads of `g_controlQueue` to get the latest setpoints.

@@ -1,6 +1,10 @@
 <!-- Note, it is intentionnal that the first heading starts as a "level2"/## and not as level1/# and should be kept like this!! -->
 ## Heading controller (outer loop for cascaded yaw control)
 
+### Very important note
+The magnetometer needs to be **calibrated** to work as expected. This is explained under chapter 4 in the documentation, and by the use of the files in this GitHub repo under **"3_Firmware >> Calibrate_Magnetometer"**!!! The values than need to be **copied over to hovercraft_variables.cpp!!!**
+
+
 ### Main idea
 This module implements the **outer loop** of a cascaded yaw controller:
 
@@ -31,3 +35,10 @@ From project settings in [src/hovercraft_variables.h](src/hovercraft_variables.h
 ### Notes / assumptions
 - Headings are treated as degrees and normalized to $[0, 360)$.
 - The controller output is a yaw-rate request (deg/s). The inner yaw-rate controller must still be active for actual actuation.
+
+#### Sign convention (important)
+This controller assumes:
+- **Positive heading error** means the craft should rotate in the direction that makes the reported heading increase.
+- `yawRateMeasured_dps` uses the **same sign convention** as the heading derivative (positive yaw rate = heading increasing).
+
+The IMU heading used by heading-hold is already mounting-corrected (including a hardcoded 180° offset and direction inversion). If you change that convention, update the yaw-rate sign accordingly, especially if using a non-zero `Kd` (derivative-on-measurement).
