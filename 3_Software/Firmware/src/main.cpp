@@ -40,7 +40,7 @@ IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
                     (int)global_PIN_IR_SENSOR_FL,
                     (int)global_PIN_IR_SENSOR_FR,
                     global_IRSensorDistance_a_meters,
-                    global_IRSensorDistance_b_meters); // pins and distance a,b between sensors for an isosceles triangle
+                    global_IRSensorDistance_b_meters); // pins and distance a: sides,b: base between sensors for an isosceles triangle
 
 // Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
 BatteryMonitor batteryMonitor;
@@ -212,30 +212,46 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
-  // Read IR sensors and save to internal state
+    constexpr uint8_t kAdcPins[] = {1, 2, 3};  // Map these to your A0/A1/A2
+  uint8_t latestSamples[3];                  // Holds most recent 8-bit readings
+  uint32_t latestTimestamps[3];              // Holds most recent timestamps in microseconds
+  float latestSamplesF[3];                   // Float copy for queueing
 
-  for (;;)
-  {
-    // Check if the ISRs have completed a full measurement set
-    if (irSensors.hasNewMeasurement())
+    // Low resolution for maximum throughput; 8-bit keeps conversion short.
+    analogReadResolution(8);
+
+    // Read IR sensors and save to internal state
+    for (;;)
     {
-      float alpha = irSensors.getAlphaToLine();
-      float vPerp = irSensors.getVelocityPerpToLine();
+        // Tight polling loop; avoid extra work inside the hot path.
+        // The charging of the ADC Capacitor takes a lot longer than the digitisation itself.
+        // So we first chrge and then set the timestamps right after reading to be as accurate as possible.
+        latestSamples[0] = analogRead(kAdcPins[0]);
+        latestTimestamps[0] = micros();
 
-      // Clear the flag so we don't read the same event multiple times
-      irSensors.consumeNewMeasurement();
+        latestSamples[1] = analogRead(kAdcPins[1]);
+        latestTimestamps[1] = micros();
 
-      // For now: Debug output.
-      // Later: Send this to a Navigation/Control Queue.
-      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
+        latestSamples[2] = analogRead(kAdcPins[2]);
+        latestTimestamps[2] = micros();
+
+        // Serial.printf("[task_irSensors] S1: %d (%lu us) | S2: %d (%lu us) | S3: %d (%lu us)\n",
+        //           latestSamples[0], (unsigned long)latestTimestamps[0],
+        //           latestSamples[1], (unsigned long)latestTimestamps[1],
+        //           latestSamples[2], (unsigned long)latestTimestamps[2]);
+
+        //save readings and timestamps to IRSensors queue
+        latestSamplesF[0] = (float)latestSamples[0];
+        latestSamplesF[1] = (float)latestSamples[1];
+        latestSamplesF[2] = (float)latestSamples[2];
+        uint32_t timestampCopy[3] = {latestTimestamps[0], latestTimestamps[1], latestTimestamps[2]};
+
+        irSensors.enqueueSample(latestSamplesF, timestampCopy);
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-
-    // Polling interval. Since line crossings are short events handled by ISRs,
-    // this task just needs to pick up the results frequently enough not to miss
-    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-  }
 }
+
 
 void task_calcIrSensors(void *parameter)
 {
@@ -245,24 +261,15 @@ void task_calcIrSensors(void *parameter)
 
   for (;;)
   {
-    // Check if the ISRs have completed a full measurement set
-    if (irSensors.hasNewMeasurement())
-    {
-      float alpha = irSensors.getAlphaToLine();
-      float vPerp = irSensors.getVelocityPerpToLine();
+    // Consume all available samples from the queue and run line detection.
+    irSensors.processQueue(global_IRSensor_Threshold, global_IRSensor_Hysteresis);
 
-      // Clear the flag so we don't read the same event multiple times
-      irSensors.consumeNewMeasurement();
+    const float alpha = irSensors.getAlphaToLine();
+    const float vPerp = irSensors.getVelocityPerpToLine();
+    Serial.printf("[task_calcIrSensors] alpha=%.3f rad, v_perp=%.3f m/s\n", alpha, vPerp);
 
-      // For now: Debug output.
-      // Later: Send this to a Navigation/Control Queue.
-      Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
-    }
-
-    // Polling interval. Since line crossings are short events handled by ISRs,
-    // this task just needs to pick up the results frequently enough not to miss
-    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -463,6 +470,16 @@ void setup()
       2,                // higher priority to stay up to date with line crossings
       &taskH_irSensors, // pass pointer to IR-Sensor function
       1);
+
+    // IR Sensors Calculation Task
+    xTaskCreatePinnedToCore(
+        &task_calcIrSensors,
+        "task_calcIrSensors",
+        4096, // stack size, needs to be adjusted when code is written
+        NULL,
+        1,
+        &taskH_calcIrSensors,
+        1);
 
   // Battery Monitor Task
   xTaskCreatePinnedToCore(

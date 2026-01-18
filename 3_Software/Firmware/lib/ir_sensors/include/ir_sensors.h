@@ -2,6 +2,8 @@
 #define IR_SENSORS_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // OVERVIEW:
 // This class handles three infrared line sensors mounted around the hovercraft.
@@ -41,13 +43,24 @@ public:
     // Call this after reading angle/velocity to clear the "new data" flag.
     void consumeNewMeasurement();
 
+    // Process one set of samples (values and common timestamp per sensor) for
+    // hysteresis crossings, angle, and speed estimation. No buffering.
+    void detectLine(const float values[3], const uint32_t t_us[3], float threshold, float hysteresis);
+
+    // Drain all queued samples and run detectLine on each until queue is empty.
+    void processQueue(float threshold, float hysteresis);
+
+    // Producer/consumer helpers for inter-task handoff of ADC samples.
+    bool enqueueSample(const float values[3], const uint32_t t_us[3]);
+    bool dequeueSample(float values[3], uint32_t t_us[3], TickType_t waitTicks);
+
 private:
     // Pins for the three IR sensors.
     int _pin1;
     int _pin2;
     int _pin3;
 
-    // Distance between neighboring sensors (meters).
+    // Distance between neighboring sensors (meters) distance a: sides,b: base between sensors for an isosceles triangle
     float _a;
     float _b;
 
@@ -73,6 +86,23 @@ private:
 
     // Timestamp of the first trigger in the current crossing.
     volatile uint32_t _crossingStart_us;
+
+    // Buffers for external sensor values and times.
+    static constexpr uint16_t SENSOR_BUFFER_SIZE = 1000;
+    volatile float _sensorValues[3][SENSOR_BUFFER_SIZE];
+    volatile uint32_t _sensorTimes[3][SENSOR_BUFFER_SIZE];
+    volatile uint16_t _sensorWriteIdx;
+    volatile uint16_t _sensorCount;
+    bool _sensorAbove[3];
+
+    // Sample queue for task-safe producer/consumer between fast ADC poller and slower processor.
+    struct Sample
+    {
+        float v[3];
+        uint32_t t[3];
+    };
+    static constexpr uint16_t SAMPLE_QUEUE_LEN = 1000;
+    QueueHandle_t _sampleQueue;
 
     // Internal helpers
     static float clamp1(float v);

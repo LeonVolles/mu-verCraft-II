@@ -1,6 +1,9 @@
 #include "ir_sensors.h"
 #include <math.h>
 
+// Provided by project globals (definition in hovercraft_variables.cpp).
+extern const float global_IRSensor_Timeout_us;
+
 // Global instance pointer for ISR trampolines.
 IRSensors *IRSensors::_instance = nullptr;
 
@@ -28,14 +31,23 @@ IRSensors::IRSensors(int pin1, int pin2, int pin3, float sensorDistance_a, float
       _t1_valid(false),
       _t2_valid(false),
       _t3_valid(false),
-      _crossingStart_us(0)
+        _crossingStart_us(0),
+        _sensorWriteIdx(0),
+        _sensorCount(0),
+        _sampleQueue(nullptr)
 {
+        _sensorAbove[0] = _sensorAbove[1] = _sensorAbove[2] = false;
 }
 
 // Initialize pins and interrupts.
 void IRSensors::begin()
 {
     _instance = this;
+
+    if (_sampleQueue == nullptr)
+    {
+        _sampleQueue = xQueueCreate(SAMPLE_QUEUE_LEN, sizeof(Sample));
+    }
 
     pinMode(_pin1, INPUT_PULLUP);
     pinMode(_pin2, INPUT_PULLUP);
@@ -64,6 +76,165 @@ bool IRSensors::hasNewMeasurement() const
 void IRSensors::consumeNewMeasurement()
 {
     _hasNewMeasurement = false;
+}
+
+bool IRSensors::enqueueSample(const float values[3], const uint32_t t_us[3])
+{
+    if (_sampleQueue == nullptr)
+    {
+        return false;
+    }
+
+    Sample s;
+    for (int i = 0; i < 3; ++i)
+    {
+        s.v[i] = values[i];
+        s.t[i] = t_us[i];
+    }
+    return xQueueSend(_sampleQueue, &s, 0) == pdPASS;
+}
+
+bool IRSensors::dequeueSample(float values[3], uint32_t t_us[3], TickType_t waitTicks)
+{
+    if (_sampleQueue == nullptr)
+    {
+        return false;
+    }
+
+    Sample s;
+    if (xQueueReceive(_sampleQueue, &s, waitTicks) != pdPASS)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < 3; ++i)
+    {
+        values[i] = s.v[i];
+        t_us[i] = s.t[i];
+    }
+    return true;
+}
+
+void IRSensors::processQueue(float threshold, float hysteresis)
+{
+    float values[3];
+    uint32_t times[3];
+
+    // Keep consuming until queue is empty to avoid backlog when producer runs faster.
+    while (dequeueSample(values, times, 0))
+    {
+        detectLine(values, times, threshold, hysteresis);
+    }
+}
+
+void IRSensors::detectLine(const float values[3], const uint32_t t_us[3], float threshold, float hysteresis)
+{
+    float upper = threshold + hysteresis;
+    float lower = (threshold > hysteresis) ? (threshold - hysteresis) : 0.0f;
+
+    const float timeout_s = global_IRSensor_Timeout_us * 1e-6f;
+
+    // Hysteresis per sensor on current samples only.
+    for (int s = 0; s < 3; ++s)
+    {
+        float v = values[s];
+        bool above = _sensorAbove[s];
+
+        if (!above && v >= upper)
+        {
+            _sensorAbove[s] = true;
+            uint32_t ts = t_us[s];
+            if (s == 0)
+            {
+                _t1_us = ts;
+                _t1_valid = true;
+            }
+            else if (s == 1)
+            {
+                _t2_us = ts;
+                _t2_valid = true;
+            }
+            else if (s == 2)
+            {
+                _t3_us = ts;
+                _t3_valid = true;
+            }
+        }
+        else if (above && v <= lower)
+        {
+            _sensorAbove[s] = false;
+        }
+    }
+
+    // Timeout: if we have partial triggers, reset if oldest timestamp is too old.
+    if ((_t1_valid || _t2_valid || _t3_valid))
+    {
+        uint32_t t_min = UINT32_MAX;
+        uint32_t t_max = 0;
+        if (_t1_valid)
+        {
+            t_min = (_t1_us < t_min) ? _t1_us : t_min;
+            t_max = (_t1_us > t_max) ? _t1_us : t_max;
+        }
+        if (_t2_valid)
+        {
+            t_min = (_t2_us < t_min) ? _t2_us : t_min;
+            t_max = (_t2_us > t_max) ? _t2_us : t_max;
+        }
+        if (_t3_valid)
+        {
+            t_min = (_t3_us < t_min) ? _t3_us : t_min;
+            t_max = (_t3_us > t_max) ? _t3_us : t_max;
+        }
+
+        float span_s = ((float)(t_max - t_min)) * 1e-6f;
+        if (span_s > timeout_s)
+        {
+            _t1_valid = _t2_valid = _t3_valid = false;
+            _sensorAbove[0] = _sensorAbove[1] = _sensorAbove[2] = false;
+        }
+    }
+
+    // Once all three have toggled, compute alpha and speed using isosceles geometry:
+    // positions: S1=BM at (0,-h), S2=FL at (-b/2,0), S3=FR at (b/2,0), base toward front.
+    // h = sqrt(a^2 - (b/2)^2)
+    if (_t1_valid && _t2_valid && _t3_valid)
+    {
+        const float a = _a;
+        const float b = _b;
+        const float halfBase = b * 0.5f;
+        if (a > halfBase)
+        {
+            const float h = sqrtf(a * a - halfBase * halfBase);
+
+            // Raw time differences in seconds
+            float dt12 = ((float)_t2_us - (float)_t1_us) * 1e-6f; // FL - BM
+            float dt13 = ((float)_t3_us - (float)_t1_us) * 1e-6f; // FR - BM
+            float dt23 = ((float)_t3_us - (float)_t2_us) * 1e-6f; // FR - FL
+
+            // Heading angle (alpha) from tan(alpha) = (2 h dt23) / (b (dt12 + dt13))
+            float denom = b * (dt12 + dt13);
+            if (fabsf(denom) > 1e-9f)
+            {
+                float alphaRad = atanf((2.0f * h * dt23) / denom);
+                float alphaDeg = normalizeDeg(RAD2DEG(alphaRad));
+
+                // Speed perpendicular to the line: v = (b * sin(alpha)) / dt23
+                float vPerp = NAN;
+                if (fabsf(dt23) > 1e-9f)
+                {
+                    vPerp = (b * sinf(alphaRad)) / dt23;
+                }
+
+                _lastAlphaDeg = alphaDeg;
+                _lastVelPerp = vPerp;
+                _hasNewMeasurement = true;
+            }
+        }
+
+        // Reset for next crossing event.
+        _t1_valid = _t2_valid = _t3_valid = false;
+    }
 }
 
 // ---- Static helpers --------------------------------------------------

@@ -95,5 +95,7 @@ extern const float global_IRSensorDistance_b_meters;
 
 // IR-line sensor thresholds
 extern const float global_IRSensor_Threshold;
+extern const float global_IRSensor_Hysteresis;
+extern const float global_IRSensor_Timeout_us;
 
 #endif // HOVERCRAFT_VARIABLES_H
