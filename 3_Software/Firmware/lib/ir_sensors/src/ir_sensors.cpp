@@ -68,7 +68,7 @@ void IRSensors::consumeNewMeasurement()
     _hasNewMeasurement = false;
 }
 
-bool IRSensors::enqueueSample(const float values[3], const uint32_t t_us[3])
+bool IRSensors::enqueueSample(const uint8_t values[3], const uint32_t t_us[3])
 {
     if (_sampleQueue == nullptr)
     {
@@ -84,7 +84,7 @@ bool IRSensors::enqueueSample(const float values[3], const uint32_t t_us[3])
     return xQueueSend(_sampleQueue, &s, 0) == pdPASS;
 }
 
-bool IRSensors::dequeueSample(float values[3], uint32_t t_us[3], TickType_t waitTicks)
+bool IRSensors::dequeueSample(uint8_t values[3], uint32_t t_us[3], TickType_t waitTicks)
 {
     if (_sampleQueue == nullptr)
     {
@@ -107,7 +107,7 @@ bool IRSensors::dequeueSample(float values[3], uint32_t t_us[3], TickType_t wait
 
 void IRSensors::processQueue(float threshold, float hysteresis)
 {
-    float values[3];
+    uint8_t values[3];
     uint32_t times[3];
 
     // Keep consuming until queue is empty to avoid backlog when producer runs faster.
@@ -117,7 +117,7 @@ void IRSensors::processQueue(float threshold, float hysteresis)
     }
 }
 
-void IRSensors::detectLine(const float values[3], const uint32_t t_us[3], float threshold, float hysteresis)
+void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], float threshold, float hysteresis)
 {
     float upper = threshold + hysteresis;
     float lower = (threshold > hysteresis) ? (threshold - hysteresis) : 0.0f;

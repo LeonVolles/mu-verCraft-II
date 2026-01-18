@@ -216,7 +216,7 @@ void task_irSensors(void *parameter)
     const int kAdcPins[] = {(int)global_PIN_IR_SENSOR_BM, (int)global_PIN_IR_SENSOR_FL, (int)global_PIN_IR_SENSOR_FR};
   uint8_t latestSamples[3];                  // Holds most recent 8-bit readings
   uint32_t latestTimestamps[3];              // Holds most recent timestamps in microseconds
-  float latestSamplesF[3];                   // Float copy for queueing
+  //float latestSamplesF[3];                   // Float copy for queueing
 
     // Low resolution for maximum throughput; 8-bit keeps conversion short.
     analogReadResolution(8);
@@ -242,12 +242,13 @@ void task_irSensors(void *parameter)
         //           latestSamples[2], (unsigned long)latestTimestamps[2]);
 
         //save readings and timestamps to IRSensors queue
-        latestSamplesF[0] = (float)latestSamples[0];
-        latestSamplesF[1] = (float)latestSamples[1];
-        latestSamplesF[2] = (float)latestSamples[2];
-        uint32_t timestampCopy[3] = {latestTimestamps[0], latestTimestamps[1], latestTimestamps[2]};
+        // latestSamplesF[0] = (float)latestSamples[0];
+        // latestSamplesF[1] = (float)latestSamples[1];
+        // latestSamplesF[2] = (float)latestSamples[2];
+        // uint32_t timestampCopy[3] = {latestTimestamps[0], latestTimestamps[1], latestTimestamps[2]};
 
-        irSensors.enqueueSample(latestSamplesF, timestampCopy);
+        //irSensors.enqueueSample(latestSamplesF, timestampCopy);
+        irSensors.enqueueSample(latestSamples, latestTimestamps);
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }

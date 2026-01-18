@@ -45,14 +45,14 @@ public:
 
     // Process one set of samples (values and common timestamp per sensor) for
     // hysteresis crossings, angle, and speed estimation. No buffering.
-    void detectLine(const float values[3], const uint32_t t_us[3], float threshold, float hysteresis);
+    void detectLine(const uint8_t values[3], const uint32_t t_us[3], float threshold, float hysteresis);
 
     // Drain all queued samples and run detectLine on each until queue is empty.
     void processQueue(float threshold, float hysteresis);
 
     // Producer/consumer helpers for inter-task handoff of ADC samples.
-    bool enqueueSample(const float values[3], const uint32_t t_us[3]);
-    bool dequeueSample(float values[3], uint32_t t_us[3], TickType_t waitTicks);
+    bool enqueueSample(const uint8_t values[3], const uint32_t t_us[3]);
+    bool dequeueSample(uint8_t values[3], uint32_t t_us[3], TickType_t waitTicks);
 
 private:
     // Pins for the three IR sensors.
