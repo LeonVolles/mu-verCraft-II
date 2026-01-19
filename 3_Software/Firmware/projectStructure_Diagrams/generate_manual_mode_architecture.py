@@ -51,10 +51,10 @@ def _diagram_style() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
         "fontsize": "12",
         # Reduce icon/text collisions for image-based nodes (diagrams uses Graphviz images).
         "imagescale": "true",
-        "imagepos": "tc",
+        "imagepos": "mc",
         "labelloc": "b",
         # Add a bit of internal padding so the first label line doesn't touch the icon.
-        "margin": "0.03,0.02",
+        "margin": "1.0,1.0",
     }
     edge_attr = {"fontname": "Segoe UI", "fontsize": "11"}
     return graph_attr, node_attr, edge_attr
