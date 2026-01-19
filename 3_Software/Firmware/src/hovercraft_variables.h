@@ -45,13 +45,34 @@ extern const float global_BatteryCurrent_VoltageDividerRatio;
 extern const float global_BatteryCurrent_SensorScaler_AmpsPerVolt;
 
 // Cutoff/warning voltages
-extern const float global_BatteryVoltageLow_WarningLow;     // warning with LED/Wifi when below this voltage
-extern const float global_BatteryVoltageLow_MotorCutoffLow; // motors should stop turning below this voltage
+extern const float global_BatteryVoltageLow_WarningLow;            // warning with LED/Wifi when below this voltage
+extern const float global_BatteryVoltageLow_MotorCutoffLow;        // motors should stop turning below this voltage
+extern const uint16_t global_BatteryVoltageLow_MotorCutoffSamples; // motors are disabled if below cutoff for more than this many samples
 
 // *************************************************
 // Motor control variables
 // *************************************************
 extern const float global_AllMotorsScalePercent; // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+
+// Reverse-direction compensation factor.
+// If your propellers are less efficient in reverse (negative command), you can boost reverse commands
+// by this factor. Applied only when the *requested* motor command is negative.
+extern const float global_NegativeRpmScaleFactor;
+
+// *************************************************
+// Web piloting / UI presets
+// *************************************************
+// Lift presets used by the web UI.
+// The UI cycles: 0 -> preset[i] -> 0 -> preset[i+1] -> ...
+extern const float global_WebLiftPresetPercent_Array[];
+extern const size_t global_WebLiftPresetPercent_Array_len;
+
+// Start index for the first non-zero lift preset after startup (startup is always 0).
+extern const int global_WebLiftPresetPercent_Array_startIndex;
+
+// Thrust preset: scales the maximum thrust command from the web UI.
+// Example: if this is 50, a full-forward (100%) UI command results in 50% thrust command.
+extern const float global_WebThrustPresetPercent;
 
 extern bool global_MotorsReversedFL; // Front Left motor reversed
 extern bool global_MotorsReversedFR; // Front Right motor normal
@@ -64,10 +85,26 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 extern const char *AP_SSID;
 extern const char *AP_PASSWORD;
 
+// Access Point credentials (softAP)
+extern const char global_WifiApSsid[];
+extern const char global_WifiApPassword[];
+
+// Web UI / webserver port (default: 80)
+extern const uint16_t global_WebServerPort;
+
 // *************************************************
 // Gyro/IMU/Complementary filter settings
 // *************************************************
 extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter alpha, high = trust gyro more
+
+// *************************************************
+// Magnetometer calibration (hard-iron offsets)
+// *************************************************
+// Offsets are in RAW magnetometer units (same units returned by DFRobot_QMC5883::readRaw()).
+// Generate them by uploading src/magnetometer_calibration.cpp with -D MAGNETOMETER_CALIBRATION.
+extern const int16_t global_MagOffsetX;
+extern const int16_t global_MagOffsetY;
+extern const int16_t global_MagOffsetZ;
 
 // *************************************************
 // Control loop constants
@@ -75,13 +112,42 @@ extern const float global_ComplementaryFilter_yawAlpha; // Complementary filter 
 // extern const float f_loop;          // Hz
 // extern const float T_loop;          // s
 
-// *************************************************
-// pid;
-// *************************************************
+// Main control loop rate for attitude/rate controllers (Hz).
+extern const float global_ControlLoopRate_Hz;
 
 // *************************************************
-// filter??
+// PID controller constants
 // *************************************************
+
+// Yaw RATE PID (setpoint is yaw rate in deg/s).
+extern const float global_YawRatePid_Kp;
+extern const float global_YawRatePid_Ki;
+extern const float global_YawRatePid_Kd;
+
+// Clamp for PID output in mixer units (diffThrust command, -100..100).
+extern const float global_YawRatePid_OutputLimit;
+
+// Clamp for integral term (in the same units as output).
+extern const float global_YawRatePid_IntegratorLimit;
+
+// Betaflight-style Actual Rates parameters for yaw.
+// - global_YawCenterSensitivity: slope near center in deg/s (per full-stick unit)
+// - global_YawRateExpo: shapes the transition from center sensitivity to max rate (0..1)
+extern const float global_MaxYawRateSetpoint_dps; // Max yaw-rate setpoint in deg/s for full stick/slider deflection (Betaflight-style).
+extern const float global_YawCenterSensitivity;
+extern const float global_YawRateExpo;
+
+// *************************************************
+// Heading (absolute yaw) controller constants
+// *************************************************
+// Outer loop for heading hold: input is heading error (deg), output is yaw-rate setpoint (deg/s).
+extern const float global_HeadingPid_Kp;
+extern const float global_HeadingPid_Ki;
+extern const float global_HeadingPid_Kd;
+
+// Limits for heading controller output (deg/s) and integrator (deg/s equivalent).
+extern const float global_HeadingPid_OutputLimit_dps;
+extern const float global_HeadingPid_IntegratorLimit_dps;
 
 // *************************************************
 // Dimensions

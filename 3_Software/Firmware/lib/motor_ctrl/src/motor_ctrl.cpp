@@ -1,6 +1,9 @@
 #include "motor_ctrl.h"
 #include "DShotESC.h"
 
+// Defined in src/hovercraft_variables.cpp (project-level config)
+extern const float global_NegativeRpmScaleFactor;
+
 // Create DShotESC instances for each motor
 DShotESC escFL;
 DShotESC escFR;
@@ -254,6 +257,12 @@ void MotorCtrl::setFrontLeftPercent(float pct)
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
 
+    // Reverse-direction compensation (based on requested percent direction, before any wiring reversal).
+    if (pct < 0.0f)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent *= global_NegativeRpmScaleFactor;
+    }
+
     // If flag "inverted" is set for this motor, invert the throttle command
     if (pSetReversedFL)
     {
@@ -278,6 +287,12 @@ void MotorCtrl::setFrontRightPercent(float pct)
 
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
+
+    // Reverse-direction compensation (based on requested percent direction, before any wiring reversal).
+    if (pct < 0.0f)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent *= global_NegativeRpmScaleFactor;
+    }
 
     // If flag "inverted" is set for this motor, invert the throttle command
     if (pSetReversedFR)
@@ -304,6 +319,12 @@ void MotorCtrl::setBackLeftPercent(float pct)
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
 
+    // Reverse-direction compensation (based on requested percent direction, before any wiring reversal).
+    if (pct < 0.0f)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent *= global_NegativeRpmScaleFactor;
+    }
+
     // If flag "inverted" is set for this motor, invert the throttle command
     if (pSetReversedBL)
     {
@@ -328,6 +349,12 @@ void MotorCtrl::setBackRightPercent(float pct)
 
     // Apply general motor power scaler
     float throttle_afterGeneralMotorPowerScalerPercent = throttle_on999scale * pGeneralMotorPowerScalerPercent / 100.0f; // Apply general motor power scaler
+
+    // Reverse-direction compensation (based on requested percent direction, before any wiring reversal).
+    if (pct < 0.0f)
+    {
+        throttle_afterGeneralMotorPowerScalerPercent *= global_NegativeRpmScaleFactor;
+    }
 
     // If flag "inverted" is set for this motor, invert the throttle command
     if (pSetReversedBR)

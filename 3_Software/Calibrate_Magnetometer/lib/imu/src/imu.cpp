@@ -211,12 +211,10 @@ void IMU::updateYawComplementaryFrom(float gz_rad_s, float mag_heading_deg)
     if (haveGyro)
     {
         const float gz_deg_s = gz_rad_s * 180.0f / PI;
-        // Sign convention: keep gyro yaw integration consistent with magnetometer heading.
-        // With the current board mounting, we apply an inverted heading convention, so gyro integration
-        // must use the corresponding opposite sign compared to the raw sensor.
-        yaw_pred = wrap360(yaw_pred + gz_deg_s * dt);
+        // Note: sign chosen so positive gyro Z matches positive yaw change.
+        yaw_pred = wrap360(yaw_pred - gz_deg_s * dt);
         // Gyro-only yaw integrates the same gyro rate but never gets mag correction.
-        _yawGyro_deg = wrap360(_yawGyro_deg + gz_deg_s * dt);
+        _yawGyro_deg = wrap360(_yawGyro_deg - gz_deg_s * dt);
     }
 
     // 2) Correct with magnetometer (complementary)
@@ -325,16 +323,7 @@ void IMU::getMag_raw(int16_t *mx, int16_t *my, int16_t *mz, float *heading_deg)
             heading += 2.0f * PI;
         if (heading > 2.0f * PI)
             heading -= 2.0f * PI;
-        // Raw magnetometer heading in degrees, normalized to [0..360).
-        float headingDeg = heading * 180.0f / PI;
-
-        // Hardcoded mounting correction:
-        // - Board is mounted reversed (0° world corresponds to 180° craft)
-        // - Heading direction is inverted (values were decreasing when they should increase)
-        // Combined transform: heading' = wrap360(180 - heading)
-        headingDeg = wrap360(180.0f - headingDeg);
-
-        *heading_deg = headingDeg;
+        *heading_deg = heading * 180.0f / PI;
     }
 }
 

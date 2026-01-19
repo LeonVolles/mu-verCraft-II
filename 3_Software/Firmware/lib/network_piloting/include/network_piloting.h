@@ -10,26 +10,26 @@
 //     float targetThrust;
 //     float targetSteering;
 //     bool armed;
-    
+
 // public:
 //     NetworkPiloting();
 //     ~NetworkPiloting();
-    
+
 //     // Initialization
 //     void init();
-    
+
 //     // Start the web server
 //     void startServer();
-    
+
 //     // Process client requests (call in main loop)
 //     void processClient();
-    
+
 //     // Remote control values
 //     void setTargetThrust(float v);
 //     void setTargetSteering(float v);
 //     float getTargetThrust();
 //     float getTargetSteering();
-    
+
 //     // Safety arming system
 //     void setArmed(bool v);
 //     bool isArmed();
@@ -56,11 +56,15 @@ public:
 	void setThrustCallback(const std::function<void(float)> &callback);
 	void setSteeringCallback(const std::function<void(float)> &callback);
 	void setArmCallback(const std::function<void(bool)> &callback);
+	void setAutoModeCallback(const std::function<void(bool)> &callback);
 	void sendTelemetry(float voltage, float current, float usedMah);
+	void sendHeading(float heading_deg);
+	void sendAutoMode(bool enabled);
 	float getLift() const;
 	float getThrust() const;
 	float getSteering() const;
 	bool motorsEnabled() const;
+	bool autoModeRequested() const;
 
 private:
 	AsyncWebServer server_;
@@ -69,10 +73,12 @@ private:
 	float thrust_;
 	float steering_;
 	bool motorsEnabled_;
+	bool autoModeRequested_;
 	std::function<void(float)> onLift_;
 	std::function<void(float)> onThrust_;
 	std::function<void(float)> onSteering_;
 	std::function<void(bool)> onArm_;
+	std::function<void(bool)> onAutoMode_;
 
 	void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
 	void applyArm(bool enabled);
