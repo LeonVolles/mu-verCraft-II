@@ -80,7 +80,7 @@ extern bool global_MotorsReversedBL; // Back Left motor normal
 extern bool global_MotorsReversedBR; // Back Right motor reversed
 
 // *************************************************
-// Wifi SSID, PW, IP Adressen
+// Wifi SSID, PW, IP addresses
 // *************************************************
 extern const char *AP_SSID;
 extern const char *AP_PASSWORD;

@@ -93,7 +93,7 @@ These values define what the web UI offers (presets) and how user input is inter
 	- Scales the maximum thrust command coming from the web UI.
 	- Implemented in the thrust callback in [src/main.cpp](src/main.cpp): `scaled = thrustPercent * (preset/100)`.
 
-### Wifi SSID, PW, IP Adressen 
+### Wifi SSID, PW, IP addresses 
 These parameters configure the ESP32 SoftAP and the webserver port.
 
 - `global_WifiApSsid` (char[])

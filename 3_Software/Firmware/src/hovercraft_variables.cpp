@@ -57,7 +57,7 @@ bool global_MotorsReversedBL = true;  // Flag: if true, all Back Left motor comm
 bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor commands are reversed
 
 // *************************************************
-// Wifi SSID, PW, IP Adressen
+// Wifi SSID, PW, IP addresses
 // *************************************************
 const char global_WifiApSsid[] = "µ-verCraft-II AP";
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
