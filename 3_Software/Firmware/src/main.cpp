@@ -518,7 +518,7 @@ void task_irSensors(void *parameter)
 
         irSensors.enqueueSample(latestSamples, latestTimestamps);
 
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+        vTaskDelay(5 / portTICK_PERIOD_MS);
     }
 }
 
@@ -795,7 +795,7 @@ void setup()
       "task_motorManagement",
       4096,        // stack size, may need to be adjusted
       &motorMixer, // pass pointer to MotorMixer
-      1,
+      3,           // higher priority for motor control
       &taskH_motorManagement,
       1);
 
@@ -832,7 +832,5 @@ void setup()
 
 void loop()
 {
-  // Nothing to do here for now
-  //??  Copilot suggested:
-  // vTaskDelay(1000 / portTICK_PERIOD_MS);
+  // Nothing to do here
 }
