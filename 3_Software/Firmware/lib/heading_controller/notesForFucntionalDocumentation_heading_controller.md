@@ -4,7 +4,8 @@
 ### Very important note
 The magnetometer needs to be **calibrated** to work as expected. This is explained under chapter 4 in the documentation, and by the use of the files in this GitHub repo under **"3_Firmware >> Calibrate_Magnetometer"**!!! The values than need to be **copied over to hovercraft_variables.cpp!!!**
 
-
+### Note about autonomous mode (M-Mode)
+The autonomous “M-Mode” logic (state machine + the 2s calibration/averaging phase) lives in [lib/autonomous_sequence/notesForFucntionalDocumentation_autonomous_sequence.md](lib/autonomous_sequence/notesForFucntionalDocumentation_autonomous_sequence.md). This file only covers the **heading PID building block** that M-Mode uses.
 ### Main idea
 This module implements the **outer loop** of a cascaded yaw controller:
 

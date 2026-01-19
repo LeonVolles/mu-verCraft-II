@@ -24,8 +24,9 @@ These constants define how the ESP32 is wired to the hardware. If the wiring cha
 	- Passed to `batteryMonitor.init(...)` in [src/main.cpp](src/main.cpp).
 
 - `global_PIN_IR_SENSOR_FL`, `global_PIN_IR_SENSOR_FR`, `global_PIN_IR_SENSOR_BM` (gpio_num_t)
-	- Digital input pins for the 3 IR line sensors (Front-Left, Front-Right, Back-Middle).
-	- Passed into the `IRSensors` constructor in [src/main.cpp](src/main.cpp), then configured as `INPUT_PULLUP` in `IRSensors::begin()`.
+	- ADC pins for the 3 IR line sensors (Front-Left, Front-Right, Back-Middle).
+	- Sampled via `analogRead(...)` in `task_irSensors` in [src/main.cpp](src/main.cpp) (mapping/order: index0=BM, index1=FL, index2=FR).
+	- Passed into the `IRSensors` constructor; `IRSensors::begin()` currently creates the internal sample queue used between the sampling and processing tasks.
 
 - `global_PIN_I2C_SDA`, `global_PIN_I2C_SCL` (gpio_num_t)
 	- Intended I2C pin definitions for sensors.

@@ -3,6 +3,8 @@
 
 ### Purpose
 
+General idea: autonomous behavior is easiest to maintain as a **small state machine**. Each state defines “what the craft should do now” (e.g. hold a heading, apply a fixed thrust), and transitions to the next state are triggered by **conditions**. In this project, conditions are currently mostly **time-based** (elapsed milliseconds), but the same structure can be extended to **event-based triggers** such as IR line detections (see the IR sensors module).
+
 Implements the time-based autonomous sequence executed when the website “M” button (Auto Mode) is enabled.
 
 The sequencer is designed to run deterministically inside the motor/control task and can:
