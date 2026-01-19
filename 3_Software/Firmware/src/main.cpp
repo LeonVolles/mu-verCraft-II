@@ -35,7 +35,6 @@ MotorMixer motorMixer(motorCtrl); // Gives control mixer access to motor control
 // Network + WiFi helpers
 WifiManager wifiManager;
 NetworkPiloting networkPiloting;
-// http://192.168.4.1/
 
 // IMU (Fermion 10DOF: ADXL345 + ITG3205 + QMC/VCM5883L + BMP280)
 IMU imu(global_ComplementaryFilter_yawAlpha);
@@ -44,7 +43,8 @@ IMU imu(global_ComplementaryFilter_yawAlpha);
 IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
                     (int)global_PIN_IR_SENSOR_FL,
                     (int)global_PIN_IR_SENSOR_FR,
-                    global_IRSensorDistance_a_meters); // pins and distance a between sensors for a equilateral triangle
+                    global_IRSensorDistance_a_meters,
+                    global_IRSensorDistance_b_meters); // pins and distance a: sides,b: base between sensors for an isosceles triangle
 
 // Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
 BatteryMonitor batteryMonitor;
@@ -115,7 +115,8 @@ TaskHandle_t taskH_Blink = NULL; // just for quick testing, delete later
 TaskHandle_t taskH_wifi = NULL;            // task: hosting the webserver/website to get user controls
 TaskHandle_t taskH_imu = NULL;             // task: reading IMU and applying filtering
 TaskHandle_t taskH_motorManagement = NULL; // task: gets Setpoint, calls Mixer, sends DShot-commands to MotorCtrl
-TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors, maybe calculating also rotation relative to the line
+TaskHandle_t taskH_irSensors = NULL;       // task: reading IR-Sensors
+TaskHandle_t taskH_calcIrSensors = NULL;   // task: calculating angle+perpendicular velocity from IR-Sensor readings
 TaskHandle_t taskH_batteryMonitor = NULL;  // task: reading battery voltage/current, warning on low battery and capacity calculation
 
 // **************************************************
@@ -150,17 +151,6 @@ void task_wifiManager(void *parameter)
 
   for (;;)
   {
-    // // Here you would read the latest user inputs
-    // ControlSetpoints mySetPoint;
-    // mySetPoint.lift = 40.0f; // replace with actual values from web UI
-    // mySetPoint.thrust = 25.0f;
-    // mySetPoint.diffThrust = 10.0f;
-
-    // if (g_controlQueue != nullptr)
-    // {
-    //   xQueueOverwrite(g_controlQueue, &mySetPoint); // always keep newest values
-    // }
-
     // Cleanup websocket clients (Async server handles everything else)
     networkPiloting.loop();
 
@@ -498,30 +488,58 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
+    // Order: index0=BM, index1=FL, index2=FR to match IRSensors detectLine mapping.
+    const int kAdcPins[] = {(int)global_PIN_IR_SENSOR_BM, (int)global_PIN_IR_SENSOR_FL, (int)global_PIN_IR_SENSOR_FR};
+  uint8_t latestSamples[3];                  // Holds most recent 8-bit readings
+  uint32_t latestTimestamps[3];              // Holds most recent timestamps in microseconds
+
+    // Low resolution for maximum throughput; 8-bit keeps conversion short.
+    analogReadResolution(8);
+
+    // Read IR sensors and save to internal state
+    for (;;)
+    {
+        // Tight polling loop; avoid extra work inside the hot path.
+        // The charging of the ADC Capacitor takes a lot longer than the digitisation itself.
+        // So we first chrge and then set the timestamps right after reading to be as accurate as possible.
+        latestSamples[0] = analogRead(kAdcPins[0]);
+        latestTimestamps[0] = micros();
+
+        latestSamples[1] = analogRead(kAdcPins[1]);
+        latestTimestamps[1] = micros();
+
+        latestSamples[2] = analogRead(kAdcPins[2]);
+        latestTimestamps[2] = micros();
+
+        // Serial.printf("[task_irSensors] BM: %d (%lu us) | FL: %d (%lu us) | FR: %d (%lu us)\n",
+        //           latestSamples[0], (unsigned long)latestTimestamps[0],
+        //           latestSamples[1], (unsigned long)latestTimestamps[1],
+        //           latestSamples[2], (unsigned long)latestTimestamps[2]);
+
+        irSensors.enqueueSample(latestSamples, latestTimestamps);
+
+        vTaskDelay(5 / portTICK_PERIOD_MS);
+    }
+}
+
+
+void task_calcIrSensors(void *parameter)
+{
   // If you need to access the global object, you can just use 'irSensors' directly,
   // or pass it via parameter if you prefer strict encapsulation.
   // Here we use the global object 'irSensors'.
 
   for (;;)
   {
-    // Check if the ISRs have completed a full measurement set
-    if (irSensors.hasNewMeasurement())
-    {
-      float alpha = irSensors.getAlphaToLine();
-      float vPerp = irSensors.getVelocityPerpToLine();
+    // Consume all available samples from the queue and run line detection.
+    irSensors.processQueue(global_IRSensor_Threshold, global_IRSensor_Hysteresis);
 
-      // Clear the flag so we don't read the same event multiple times
-      irSensors.consumeNewMeasurement();
+    const float alpha = irSensors.getAlphaToLine();
+    const float vPerp = irSensors.getVelocityPerpToLine();
+    Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
 
-      // For now: Debug output.
-      // Later: Send this to a Navigation/Control Queue.
-      // Serial.printf("[IR-Task] Alpha: %.2f deg | V_perp: %.3f m/s\n", alpha, vPerp);
-    }
-
-    // Polling interval. Since line crossings are short events handled by ISRs,
-    // this task just needs to pick up the results frequently enough not to miss
-    // updates if you want to react fast. 10-20ms is may be a starting point, but adapt to IMU so it resets the cumulated yaw drift properly.
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -540,11 +558,11 @@ void task_batteryMonitor(void *parameter)
     const float a = batteryMonitor.getCurrent();
     const float mah = batteryMonitor.getMAH();
 
-    // Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
-    //               xPortGetCoreID(),
-    //               v,
-    //               a,
-    //               mah);
+    //Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+                //   xPortGetCoreID(),
+                //   v,
+                //   a,
+                //   mah);
 
     // Push latest battery telemetry to all connected web clients.
     networkPiloting.sendTelemetry(v, a, mah);
@@ -777,7 +795,7 @@ void setup()
       "task_motorManagement",
       4096,        // stack size, may need to be adjusted
       &motorMixer, // pass pointer to MotorMixer
-      1,
+      3,           // higher priority for motor control
       &taskH_motorManagement,
       1);
 
@@ -790,6 +808,16 @@ void setup()
       2,                // higher priority to stay up to date with line crossings
       &taskH_irSensors, // pass pointer to IR-Sensor function
       1);
+
+    // IR Sensors Calculation Task
+    xTaskCreatePinnedToCore(
+        &task_calcIrSensors,
+        "task_calcIrSensors",
+        4096, // stack size, needs to be adjusted when code is written
+        NULL,
+        1,
+        &taskH_calcIrSensors,
+        1);
 
   // Battery Monitor Task
   xTaskCreatePinnedToCore(
@@ -804,7 +832,5 @@ void setup()
 
 void loop()
 {
-  // Nothing to do here for now
-  //??  Copilot suggested:
-  // vTaskDelay(1000 / portTICK_PERIOD_MS);
+  // Nothing to do here
 }

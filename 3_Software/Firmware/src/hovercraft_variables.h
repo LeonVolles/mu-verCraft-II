@@ -82,6 +82,8 @@ extern bool global_MotorsReversedBR; // Back Right motor reversed
 // *************************************************
 // Wifi SSID, PW, IP Adressen
 // *************************************************
+extern const char *AP_SSID;
+extern const char *AP_PASSWORD;
 
 // Access Point credentials (softAP)
 extern const char global_WifiApSsid[];
@@ -153,10 +155,13 @@ extern const float global_HeadingPid_IntegratorLimit_dps;
 // sensor positions
 // motor positions
 
-// IR sensor distance a (equilateral triangle side length)
+// IR Sensor distances in Isosceles triangle
 extern const float global_IRSensorDistance_a_meters;
+extern const float global_IRSensorDistance_b_meters;
 
 // IR-line sensor thresholds
 extern const float global_IRSensor_Threshold;
+extern const float global_IRSensor_Hysteresis;
+extern const float global_IRSensor_Timeout_us;
 
 #endif // HOVERCRAFT_VARIABLES_H

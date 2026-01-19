@@ -18,9 +18,9 @@ const gpio_num_t global_PIN_BATTERY_VOLTAGE_MONITOR = GPIO_NUM_9;
 const gpio_num_t global_PIN_BATTERY_CURRENT_MONITOR = GPIO_NUM_4;
 
 // IR-Sensor Pins
-const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_1; // Front-Left sensor
+const gpio_num_t global_PIN_IR_SENSOR_FL = GPIO_NUM_3; // Front-Left sensor
 const gpio_num_t global_PIN_IR_SENSOR_FR = GPIO_NUM_2; // Front-Right sensor
-const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_3; // Back sensor
+const gpio_num_t global_PIN_IR_SENSOR_BM = GPIO_NUM_1; // Back sensor
 
 // I2C Pins (GPIO5 = SDA, GPIO6 = SCL)
 const gpio_num_t global_PIN_I2C_SDA = GPIO_NUM_5;
@@ -128,8 +128,9 @@ const float global_HeadingPid_IntegratorLimit_dps = 45.0f;
 // *************************************************
 // Dimensions
 // *************************************************
-// IR Sensor distance a (actual definition)
-const float global_IRSensorDistance_a_meters = 1.0f; // TODO: distance between neighboring IR-sensors (equilateral triangle side length a)
+// IR Sensor distances in Isosceles triangle
+const float global_IRSensorDistance_a_meters = 0.07f; // triangle has equal sides of length a
+const float global_IRSensorDistance_b_meters = 0.06f; // triangle has base of length b
 
 // sensor positions
 // motor positions
@@ -138,4 +139,6 @@ const float global_IRSensorDistance_a_meters = 1.0f; // TODO: distance between n
 // Thresholds, limits, etc.
 // *************************************************
 // IR-line sensor thresholds
-const float global_IRSensor_Threshold = 0.7f; // example threshold value for IR sensors when a line is detected, adjust based on calibration
+const float global_IRSensor_Threshold = 150.0f; // black line over 150
+const float global_IRSensor_Hysteresis = 10.0f; // hysteresis for line detection
+const float global_IRSensor_Timeout_us = 5000000.0f; // timeout in microseconds for incomplete crossings (5 seconds)
