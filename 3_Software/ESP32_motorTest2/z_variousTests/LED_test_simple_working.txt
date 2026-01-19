@@ -1,0 +1,28 @@
+#include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
+
+#define LED_PIN     18      // NeoPixel on IO18
+#define LED_COUNT   1       // Single on-board pixel
+#define BRIGHTNESS  20      // 0..255 (keep it low for eyes/power)
+
+Adafruit_NeoPixel pixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+static inline void setColor(uint8_t r, uint8_t g, uint8_t b) {
+  pixel.setPixelColor(0, pixel.Color(r, g, b));
+  pixel.show();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);              // Give USB-serial a moment
+  pixel.begin();
+  pixel.setBrightness(BRIGHTNESS);
+  setColor(0, 0, 0);        // start off
+}
+
+void loop() {
+  setColor(255, 0, 0);  delay(500);   // Red
+  setColor(0, 255, 0);  delay(500);   // Green
+  setColor(0, 0, 255);  delay(500);   // Blue
+  setColor(0, 0, 0);    delay(500);   // Off
+}
