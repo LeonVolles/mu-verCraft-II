@@ -21,6 +21,7 @@
 #include <pid_controller.h>
 #include <heading_controller.h>
 #include <camera_placeholder.h>
+#include <autonomous_sequence.h>
 
 // **************************************************
 // DEFINE ALL OBJECTS THAT ARE NEEDED
@@ -47,6 +48,9 @@ IRSensors irSensors((int)global_PIN_IR_SENSOR_BM,
 
 // Battery monitor (Betaflight-style voltage/current sensing via ADC + divider ratios)
 BatteryMonitor batteryMonitor;
+
+// Autonomous "M" mode sequencer (time-based heading/thrust script)
+AutonomousSequence autonomousSequence;
 
 // Low-battery safety flags (set by battery task, read by other tasks).
 static volatile bool g_lowBatteryLedSolidOn = false;
@@ -75,6 +79,10 @@ static volatile uint32_t g_lastYawUpdate_us = 0; // micros() timestamp
 // New mode: heading hold (triggered via web UI "M" button).
 static volatile bool g_headingHoldActive = false;
 static volatile float g_headingTarget_deg = 0.0f;
+
+// UI sync for M-Mode state (AsyncWebServer runs on a different task/core).
+static volatile bool g_autoModeUiSyncPending = false;
+static volatile bool g_autoModeUiDesired = false;
 
 static inline float wrap360_local(float deg)
 {
@@ -155,6 +163,14 @@ void task_wifiManager(void *parameter)
 
     // Cleanup websocket clients (Async server handles everything else)
     networkPiloting.loop();
+
+    // If we force-exit M-Mode (e.g. sequence finished), sync UI state.
+    if (g_autoModeUiSyncPending)
+    {
+      const bool desired = g_autoModeUiDesired;
+      g_autoModeUiSyncPending = false;
+      networkPiloting.sendAutoMode(desired);
+    }
 
     // Push current heading to the web UI at a modest rate.
     const uint32_t nowMs = millis();
@@ -331,8 +347,48 @@ void task_motorManagement(void *parameter)
       }
     }
 
+    // Work on a copy so autonomous overrides don't permanently mutate the last user setpoints.
+    ControlSetpoints appliedSetpoints = mySetPoint;
+
     // Battery safety gate: if cutoff is active, force motors OFF regardless of user arming.
-    const bool effectiveMotorsEnabled = mySetPoint.motorsEnabled && !g_lowBatteryMotorCutoff;
+    const bool effectiveMotorsEnabled = appliedSetpoints.motorsEnabled && !g_lowBatteryMotorCutoff;
+
+    // Update autonomous sequence (M-Mode). This may override thrust and heading.
+    const uint32_t lastYawUs = g_lastYawUpdate_us;
+    const bool yawFresh = (lastYawUs != 0) && ((nowUs - lastYawUs) < 150000); // 150ms freshness
+    const float yawMeasured_deg = yawFresh ? g_yawMeasured_deg : 0.0f;
+
+    autonomousSequence.update(millis(), yawMeasured_deg, yawFresh, effectiveMotorsEnabled);
+
+    if (autonomousSequence.isActive())
+    {
+      // During M-Mode we override user commands.
+      // - Calibration must keep all motors at 0 output for stability.
+      // - After calibration, thrust is overridden by the sequence.
+      const AutonomousSequence::State s = autonomousSequence.state();
+      const bool holdMotorsAtZero = (s == AutonomousSequence::State::Calibrating) || (s == AutonomousSequence::State::WaitingForArm);
+
+      if (holdMotorsAtZero)
+      {
+        appliedSetpoints.thrust = 0.0f;
+        appliedSetpoints.diffThrust = 0.0f;
+        appliedSetpoints.lift = 0.0f;
+        appliedSetpoints.liftEnabled = false;
+      }
+      else
+      {
+        if (autonomousSequence.overrideThrust())
+        {
+          appliedSetpoints.thrust = constrain(autonomousSequence.thrustOverride_percent(), -100.0f, 100.0f);
+        }
+        appliedSetpoints.diffThrust = 0.0f;
+      }
+
+      if (autonomousSequence.wantsHeadingHold())
+      {
+        setHeading(autonomousSequence.headingTarget_deg());
+      }
+    }
 
     // Apply whatever values are in mySetPoint (last known setpoints)
     // Enforce emergency override at MotorCtrl level as well.
@@ -340,7 +396,7 @@ void task_motorManagement(void *parameter)
 
     // Compute yaw rate setpoint from steering input.
     // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
-    float yawRateSetpoint_dps = yawRateSetpointFromSteeringPercent_dps(mySetPoint.diffThrust);
+    float yawRateSetpoint_dps = yawRateSetpointFromSteeringPercent_dps(appliedSetpoints.diffThrust);
 
     const uint32_t lastGyroUs = g_lastYawRateUpdate_us;
     const bool gyroFresh = (lastGyroUs != 0) && ((nowUs - lastGyroUs) < 50000); // 50ms freshness
@@ -353,9 +409,7 @@ void task_motorManagement(void *parameter)
     }
     lastHeadingHoldActive = headingHold;
 
-    const uint32_t lastYawUs = g_lastYawUpdate_us;
-    const bool yawFresh = (lastYawUs != 0) && ((nowUs - lastYawUs) < 150000); // 150ms freshness
-    const float yawMeasured_deg = yawFresh ? g_yawMeasured_deg : 0.0f;
+    // yawFresh/yawMeasured_deg computed above (also used by autonomous sequencer)
 
     if (headingHold)
     {
@@ -370,6 +424,33 @@ void task_motorManagement(void *parameter)
         headingPid.reset();
         yawRateSetpoint_dps = 0.0f;
       }
+    }
+
+    // If the sequence finishes or is aborted, force-stop motors and exit M-Mode.
+    if (autonomousSequence.consumeExitRequest())
+    {
+      cancelHeadingHold();
+
+      g_latestSetpoints.motorsEnabled = false;
+      g_latestSetpoints.liftEnabled = false;
+      g_latestSetpoints.lift = 0.0f;
+      g_latestSetpoints.thrust = 0.0f;
+      g_latestSetpoints.diffThrust = 0.0f;
+      if (g_controlQueue != nullptr)
+      {
+        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
+      }
+
+      motorCtrl.setMotorsEnabled(false);
+      mixer->setLift(0.0f);
+      mixer->setDiffThrust(0.0f);
+      mixer->setThrust(0.0f);
+
+      // Sync UI to OFF (best-effort)
+      g_autoModeUiDesired = false;
+      g_autoModeUiSyncPending = true;
+
+      Serial.println("[AUTO] sequence exit -> motors OFF, M-Mode OFF");
     }
 
     float diffCmd = 0.0f;
@@ -388,14 +469,14 @@ void task_motorManagement(void *parameter)
     {
       // Keep the selected lift setpoint latched even while disarmed,
       // so arming immediately applies the preselected lift percentage.
-      mixer->setLift(mySetPoint.liftEnabled ? mySetPoint.lift : 0.0f);
+      mixer->setLift(appliedSetpoints.liftEnabled ? appliedSetpoints.lift : 0.0f);
       mixer->setDiffThrust(0.0f);
       mixer->setThrust(0.0f);
     }
     else
     {
       // Lift OFF only affects the two front motors.
-      if (!mySetPoint.liftEnabled)
+      if (!appliedSetpoints.liftEnabled)
       {
         // Hard-stop lift motors and keep mixer lift at 0.
         motorCtrl.applyLiftOff();
@@ -403,12 +484,12 @@ void task_motorManagement(void *parameter)
       }
       else
       {
-        mixer->setLift(mySetPoint.lift);
+        mixer->setLift(appliedSetpoints.lift);
       }
 
       // Thrust + yaw-rate control should still work even if lift is OFF.
       mixer->setDiffThrust(diffCmd);
-      mixer->setThrust(mySetPoint.thrust);
+      mixer->setThrust(appliedSetpoints.thrust);
     }
 
     vTaskDelayUntil(&lastWake, controlPeriodTicks);
@@ -643,14 +724,15 @@ void setup()
                                       {
     if (enabled)
     {
-      // Temporary behavior: pressing the M button triggers a fixed heading target.
-      setHeading(10.0f);
-      Serial.println("[AUTO] autoMode ON -> setHeading(10)");
+      // Start autonomous M-Mode sequence (runs inside motor task).
+      autonomousSequence.requestStart();
+      Serial.println("[AUTO] autoMode ON -> start sequence");
     }
     else
     {
-      cancelHeadingHold();
-      Serial.println("[AUTO] autoMode OFF -> back to manual steering");
+      // Abort sequence at any time.
+      autonomousSequence.requestStop();
+      Serial.println("[AUTO] autoMode OFF -> abort sequence");
     } });
 
   networkPiloting.begin();

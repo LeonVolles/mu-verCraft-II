@@ -439,6 +439,10 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 					if (typeof data.motorsEnabled === 'boolean') {
 						state.motorsEnabled = data.motorsEnabled;
 					}
+					if (typeof data.autoMode === 'boolean') {
+						state.autoMode = data.autoMode;
+						setAutoModeUi(state.autoMode);
+					}
 					if (typeof data.batt === 'number') {
 						metricBatt.textContent = `Batt: ${data.batt.toFixed(2)} V`;
 						updateBatteryUi(data.batt);
@@ -855,7 +859,8 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 			server->textAll(String("{\"lift\":") + String(lift_, 1) +
 							",\"thrust\":" + String(thrust_, 1) +
 							",\"steering\":" + String(steering_, 1) +
-							",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") + "}");
+							",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") +
+							",\"autoMode\":" + (autoModeRequested_ ? "true" : "false") + "}");
 		}
 	}
 }
@@ -892,4 +897,13 @@ void NetworkPiloting::sendHeading(float heading_deg)
 		return;
 	}
 	ws_.textAll(String("{\"yaw\":") + String(heading_deg, 1) + "}");
+}
+
+void NetworkPiloting::sendAutoMode(bool enabled)
+{
+	if (ws_.count() == 0)
+	{
+		return;
+	}
+	ws_.textAll(String("{\"autoMode\":") + (enabled ? "true" : "false") + "}");
 }

@@ -59,6 +59,7 @@ public:
 	void setAutoModeCallback(const std::function<void(bool)> &callback);
 	void sendTelemetry(float voltage, float current, float usedMah);
 	void sendHeading(float heading_deg);
+	void sendAutoMode(bool enabled);
 	float getLift() const;
 	float getThrust() const;
 	float getSteering() const;

@@ -87,21 +87,6 @@ const int16_t global_MagOffsetZ = -517;
 // Main control loop rate for controllers (Hz)
 const float global_ControlLoopRate_Hz = 100.0f;
 
-/// *************************************************
-// PID controller constants
-// *************************************************
-// Yaw RATE PID (deg/s).
-// Start conservative; tune on hardware.
-const float global_YawRatePid_Kp = 0.5f;   // defaults where 0.25f
-const float global_YawRatePid_Ki = 0.1f;   // defaults where 0.05f
-const float global_YawRatePid_Kd = 0.004f; // defaults where 0.002f
-
-// PID output is fed into MotorMixer::setDiffThrust() which expects [-100..100].
-const float global_YawRatePid_OutputLimit = 100.0f;
-
-// Integral clamp in same units as output.
-const float global_YawRatePid_IntegratorLimit = 50.0f;
-
 // *************************************************
 // Rates = responsiveness of the sliders
 // *************************************************
@@ -112,12 +97,27 @@ const float global_MaxYawRateSetpoint_dps = 2.0f * 360.0f; // 2 full rotations p
 const float global_YawRateExpo = 0.40f;                    // expo for yaw rate response curve
 const float global_YawCenterSensitivity = 450.0f;          // sensitivity around center for small deflections
 
+/// *************************************************
+// PID controller constants
+// *************************************************
+// Yaw RATE PID (deg/s).
+// Start conservative; tune on hardware.
+const float global_YawRatePid_Kp = 2.0f * 0.5f;   // defaults where 0.25f
+const float global_YawRatePid_Ki = 2.0f * 0.1f;   // defaults where 0.05f
+const float global_YawRatePid_Kd = 3.0f * 0.004f; // defaults where 0.002f
+
+// PID output is fed into MotorMixer::setDiffThrust() which expects [-100..100].
+const float global_YawRatePid_OutputLimit = 100.0f;
+
+// Integral clamp in same units as output.
+const float global_YawRatePid_IntegratorLimit = 50.0f;
+
 // *************************************************
 // Heading (absolute yaw) controller constants
 // *************************************************
 // Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
 // Start with conservative gains; tune on hardware.
-const float global_HeadingPid_Kp = 45.0f; // 6
+const float global_HeadingPid_Kp = 50.0f; // 6
 const float global_HeadingPid_Ki = 0.0f;  // 0
 const float global_HeadingPid_Kd = 0.0f;  // 0.3
 
