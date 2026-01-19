@@ -238,13 +238,31 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
             if (fabsf(denom) > 1e-9f)
             {
                 float alphaRad = atanf((2.0f * h * dt23) / denom);
-                float alphaDeg = normalizeDeg(RAD2DEG(alphaRad));
+                float alphaDeg = RAD2DEG(alphaRad);
+                // Wrap to (-180, 180]
+                if (alphaDeg > 180.0f)
+                {
+                    alphaDeg -= 360.0f;
+                }
+                else if (alphaDeg <= -180.0f)
+                {
+                    alphaDeg += 360.0f;
+                }
 
                 // Speed perpendicular to the line: v = (b * sin(alpha)) / dt23
                 float vPerp = NAN;
                 if (fabsf(dt23) > 1e-9f)
                 {
-                    vPerp = (b * sinf(alphaRad)) / dt23;
+                    float vMag = (b * sinf(alphaRad)) / dt23; // magnitude from geometry
+
+                    // Determine sign from who crosses first: front avg vs back
+                    // lead < 0 -> front (FL/FR) earlier -> forward -> positive
+                    float t1 = (float)_t1_us * 1e-6f; // BM
+                    float t2 = (float)_t2_us * 1e-6f; // FL
+                    float t3 = (float)_t3_us * 1e-6f; // FR
+                    float frontMeanMinusBack = 0.5f * (t2 + t3) - t1;
+                    float sign = (frontMeanMinusBack < 0.0f) ? 1.0f : -1.0f;
+                    vPerp = sign * fabsf(vMag);
                 }
 
                 _lastAlphaDeg = alphaDeg;
@@ -448,9 +466,6 @@ float IRSensors::computeVelocityPerpToLine(float alphaDeg,
 
     // Average of all valid pair-based estimates.
     float vPerp = vSum / (float)vCount;
-
-    // negate, as the sensor layout is inversed now (S1 is in the back)
-    vPerp = -vPerp;
 
     return vPerp;
 }

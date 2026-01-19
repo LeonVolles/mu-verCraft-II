@@ -242,7 +242,7 @@ void task_irSensors(void *parameter)
 
         irSensors.enqueueSample(latestSamples, latestTimestamps);
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
 
@@ -263,7 +263,7 @@ void task_calcIrSensors(void *parameter)
     Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
 
     // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
