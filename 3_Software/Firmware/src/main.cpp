@@ -245,7 +245,7 @@ void task_imu(void *parameter)
       //               imu.getYaw_deg());
 
       // Mag, Gyro, Comp
-      Serial.printf("%0.2f,%0.2f,%0.2f\n", heading_deg, imu.getYawGyro_deg(), imu.getYaw_deg());
+      //Serial.printf("%0.2f,%0.2f,%0.2f\n", heading_deg, imu.getYawGyro_deg(), imu.getYaw_deg());
     }
 
     imu.updateYawComplementaryFrom(gz, heading_deg);
