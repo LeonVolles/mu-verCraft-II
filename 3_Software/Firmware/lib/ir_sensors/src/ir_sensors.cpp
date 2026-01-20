@@ -83,6 +83,7 @@ bool IRSensors::enqueueSample(const uint8_t values[3], const uint32_t t_us[3])
         s.v[i] = values[i];
         s.t[i] = t_us[i];
     }
+    //Serial.println("Enqueued sample");
     return xQueueSend(_sampleQueue, &s, 0) == pdPASS;
 }
 
@@ -111,11 +112,14 @@ void IRSensors::processQueue(float threshold, float hysteresis)
 {
     uint8_t values[3];
     uint32_t times[3];
+    // uint32_t processedCount = 0;
 
     // Keep consuming until queue is empty to avoid backlog when producer runs faster.
     while (dequeueSample(values, times, 0))
     {
         detectLine(values, times, threshold, hysteresis);
+        // processedCount++;
+        // Serial.println("Dequeued sample: " + String(processedCount));
     }
 }
 

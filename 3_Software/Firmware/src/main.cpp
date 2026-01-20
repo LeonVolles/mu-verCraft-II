@@ -522,7 +522,6 @@ void task_irSensors(void *parameter)
     }
 }
 
-
 void task_calcIrSensors(void *parameter)
 {
   // If you need to access the global object, you can just use 'irSensors' directly,
