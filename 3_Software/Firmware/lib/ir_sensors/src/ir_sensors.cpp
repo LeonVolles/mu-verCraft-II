@@ -231,42 +231,48 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
             float dt13 = ((float)_t3_us - (float)_t1_us) * 1e-6f; // FR - BM
             float dt23 = ((float)_t3_us - (float)_t2_us) * 1e-6f; // FR - FL
 
-            // Heading angle (alpha) from tan(alpha) = (2 h dt23) / (b (dt12 + dt13))
-            float denom = b * (dt12 + dt13);
-            if (fabsf(denom) > 1e-9f)
+            // Heading angle (alpha) using atan2 with flipped forward axis so that
+            // forward perpendicular (front first, dt23=0) yields 0 deg.
+            float alphaRad = atan2f(2.0f * h * dt23, -b * (dt12 + dt13));
+            float alphaDeg = RAD2DEG(alphaRad); // in [-180, 180]
+
+            // Determine motion direction: front avg vs back
+            // lead < 0 -> front (FL/FR) earlier -> forward
+            float t1 = (float)_t1_us * 1e-6f; // BM
+            float t2 = (float)_t2_us * 1e-6f; // FL
+            float t3 = (float)_t3_us * 1e-6f; // FR
+            float frontMeanMinusBack = 0.5f * (t2 + t3) - t1;
+            bool forward = (frontMeanMinusBack < 0.0f);
+
+            // Display angle convention:
+            // forward perpendicular -> 0, backward perpendicular -> -180
+            float alphaDisplayDeg = alphaDeg;
+            if (!forward && alphaDisplayDeg > 0.0f)
             {
-                float alphaRad = atanf((2.0f * h * dt23) / denom);
-                float alphaDeg = RAD2DEG(alphaRad);
-                // Wrap to (-180, 180]
-                if (alphaDeg > 180.0f)
-                {
-                    alphaDeg -= 360.0f;
-                }
-                else if (alphaDeg <= -180.0f)
-                {
-                    alphaDeg += 360.0f;
-                }
-
-                // Speed perpendicular to the line: v = (b * sin(alpha)) / dt23
-                float vPerp = NAN;
-                if (fabsf(dt23) > 1e-9f)
-                {
-                    float vMag = (b * sinf(alphaRad)) / dt23; // magnitude from geometry
-
-                    // Determine sign from who crosses first: front avg vs back
-                    // lead < 0 -> front (FL/FR) earlier -> forward -> positive
-                    float t1 = (float)_t1_us * 1e-6f; // BM
-                    float t2 = (float)_t2_us * 1e-6f; // FL
-                    float t3 = (float)_t3_us * 1e-6f; // FR
-                    float frontMeanMinusBack = 0.5f * (t2 + t3) - t1;
-                    float sign = (frontMeanMinusBack < 0.0f) ? 1.0f : -1.0f;
-                    vPerp = sign * fabsf(vMag);
-                }
-
-                _lastAlphaDeg = alphaDeg;
-                _lastVelPerp = vPerp;
-                _hasNewMeasurement = true;
+                alphaDisplayDeg -= 360.0f;
             }
+            // Wrap to (-180, 180]
+            while (alphaDisplayDeg > 180.0f)
+            {
+                alphaDisplayDeg -= 360.0f;
+            }
+            while (alphaDisplayDeg <= -180.0f)
+            {
+                alphaDisplayDeg += 360.0f;
+            }
+
+            // Speed perpendicular to the line: v = (b * sin(alpha)) / dt23
+            float vPerp = NAN;
+            if (fabsf(dt23) > 1e-9f)
+            {
+                float vMag = (b * sinf(alphaRad)) / dt23; // magnitude from geometry
+                float sign = forward ? 1.0f : -1.0f;
+                vPerp = sign * fabsf(vMag);
+            }
+
+            _lastAlphaDeg = alphaDisplayDeg;
+            _lastVelPerp = vPerp;
+            _hasNewMeasurement = true;
         }
 
         // Reset for next crossing event.

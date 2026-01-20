@@ -518,7 +518,7 @@ void task_irSensors(void *parameter)
 
         irSensors.enqueueSample(latestSamples, latestTimestamps);
 
-        vTaskDelay(5 / portTICK_PERIOD_MS);
+        vTaskDelay(2 / portTICK_PERIOD_MS);
     }
 }
 
