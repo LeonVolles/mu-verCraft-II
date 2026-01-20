@@ -8,7 +8,8 @@ This module wraps the ESP32 Arduino `WiFi` API to start and manage a WiFi Access
 - Class/API: [lib/wifi_manager/include/wifi_manager.h](lib/wifi_manager/include/wifi_manager.h) (implementation in [lib/wifi_manager/src/wifi_manager.cpp](lib/wifi_manager/src/wifi_manager.cpp)).
 - Instantiated as a global object in [src/main.cpp](src/main.cpp).
 - The AP is started once during `setup()` via `wifiManager.startAccessPoint(global_WifiApSsid, global_WifiApPassword)`.
-- Runtime “WiFi/Web handling” runs inside `task_wifiManager()` in [src/main.cpp](src/main.cpp), which is created with `xTaskCreatePinnedToCore(..., 0)`, i.e. pinned to **ESP32 core 0** (while most other tasks run on core 1).
+- Runtime web handling is performed by the async webserver (see `network_piloting`).
+- The project’s `task_wifiManager()` in [src/main.cpp](src/main.cpp) is mainly used for periodic diagnostics (heap/stack logging), not for driving the webserver.
 
 ### Functionalities implemented
 - **Start SoftAP:** configures `WiFi.mode(WIFI_AP)` and starts `WiFi.softAP(...)` with SSID/password/channel/max connections.

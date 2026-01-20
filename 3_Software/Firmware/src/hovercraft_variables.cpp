@@ -59,7 +59,7 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // *************************************************
 // Wifi SSID, PW, IP addresses
 // *************************************************
-const char global_WifiApSsid[] = "µ-verCraft-II AP2";
+const char global_WifiApSsid[] = "µ-verCraft-II AP";
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 // Note: WebUi/Website: 192.168.4.1
 const uint16_t global_WebServerPort = 80;
@@ -88,7 +88,7 @@ const int16_t global_MagOffsetZ = 44;
 // Control loop constants (example, if you enable them)
 // *************************************************
 // Main control loop rate for controllers (Hz)
-const float global_ControlLoopRate_Hz = 100.0f;
+const float global_ControlLoopRate_Hz = 400.0f;
 
 // *************************************************
 // Rates = responsiveness of the sliders
@@ -105,9 +105,9 @@ const float global_YawCenterSensitivity = 450.0f;          // sensitivity around
 // *************************************************
 // Yaw RATE PID (deg/s).
 // Start conservative; tune on hardware.
-const float global_YawRatePid_Kp = 2.0f * 0.5f;   // defaults where 0.25f
-const float global_YawRatePid_Ki = 2.0f * 0.1f;   // defaults where 0.05f
-const float global_YawRatePid_Kd = 3.0f * 0.004f; // defaults where 0.002f
+const float global_YawRatePid_Kp = 2.0f;
+const float global_YawRatePid_Ki = 4.0f;
+const float global_YawRatePid_Kd = 0.04f;
 
 // PID output is fed into MotorMixer::setDiffThrust() which expects [-100..100].
 const float global_YawRatePid_OutputLimit = 100.0f;
@@ -120,9 +120,10 @@ const float global_YawRatePid_IntegratorLimit = 50.0f;
 // *************************************************
 // Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
 // Start with conservative gains; tune on hardware.
-const float global_HeadingPid_Kp = 50.0f; // 6
-const float global_HeadingPid_Ki = 0.0f;  // 0
-const float global_HeadingPid_Kd = 0.0f;  // 0.3
+// Ziegler nicosl: Ku = 50, Pu = 1,5s => Kp 0,6*Ku=30, Ki=1.2*Ku/Pu=40, Kd=0.075*Ku*Pu=5
+const float global_HeadingPid_Kp = 40.0f; // 6
+const float global_HeadingPid_Ki = 1.1f;  // 0
+const float global_HeadingPid_Kd = 1.1f;  // 0.3
 
 // Limit yaw-rate request from heading-hold to keep it smooth.
 const float global_HeadingPid_OutputLimit_dps = 100.0f;

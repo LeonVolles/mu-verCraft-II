@@ -5,7 +5,9 @@
 An RTOS lets you split one big `loop()` into multiple independent “tasks” that run *as if* they were in parallel. The RTOS decides which task runs when, so timing-critical work (e.g. control loops) can keep a stable update rate even while other work (e.g. networking) is happening.
 
 ### Main idea
-This firmware uses FreeRTOS to run multiple subsystems concurrently (WiFi/web, IMU, control loop, sensors, telemetry) with explicit timing and priorities.
+This firmware uses FreeRTOS to run multiple subsystems concurrently (IMU, control loop, sensors, diagnostics) with explicit timing and priorities.
+
+Networking is implemented using an async web stack (AsyncTCP/ESPAsyncWebServer). Its callbacks run in their own context, so the project does not need a dedicated “networking loop task” for basic operation.
 
 
 ### What an RTOS is (and why we use it)

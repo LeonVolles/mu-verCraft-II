@@ -147,6 +147,29 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
 
     const uint32_t elapsedMs = nowMs - stateStartMs_;
 
+    // The real "SPS-like" programming for the competition sequence is defined here:
+    // New sequence, it is no longer time based, this time it's event based:
+    // Line-sequence is as follows: 0/blind/startLine -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> ... (continue loop)
+    //[0°/blind] -> [0°/line detect] -> [-90°/line detect] -> [0°/line detect] -> [0°/line detect] -> [-90°/line detect] -> [-90°/line detect] -> [0°/line detect] -> exit
+    /*
+        New idea for real structure:
+        - Calibrating: 2s standstill, average heading
+        - WaitingForArm: wait until motorsEnabled==true
+
+        - When "go":
+        1.) [0°/blind]: hold direction "blind" for 0.5s with thrust 50% -> surpass the start line blindly
+        2.) [0°/line detect]: hold direction "bilnd" until IR sensors detect line (thrust 45%), then
+            "correction step": use the angle from the IR sensors, do math:
+            newHeadingSetpoint = currentHeading - alpha - 0deg (currentAngle from Complementary filter, alpha from IR sensors)
+        3.) [-90°/line detect]: continue as before, until line detected, then do correction step with -90deg, maths:
+            newHeadingSetpoint = currentHeading - alpha - (-90deg)
+        4.) [0°/line detect]: continue as before, until line detected, then do correction step with 0deg, maths:
+            newHeadingSetpoint = currentHeading - alpha - 0deg
+        ... repeat steps 3 and 4 until stop condition ...
+    */
+
+    // right here is the old time-based sequence, needs to be replaced with the new event-based sequence
+    // time based was: calibrate, go straight 1.6s, turn -90 0.75s, turn -180 5s, exit
     switch (state_)
     {
     case State::Calibrating:
@@ -187,13 +210,13 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
         break;
 
     case State::HoldStart:
-        // Hold heading for 1s with thrust override.
+        // Hold heading for 2s with thrust override.
         overrideThrust_ = true;
         thrustOverridePercent_ = 20.0f;
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(startHeadingDeg_);
 
-        if (elapsedMs >= 1000)
+        if (elapsedMs >= 1600)
         {
             enterState(State::TurnMinus90, nowMs);
         }
@@ -205,7 +228,7 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(startHeadingDeg_ - 90.0f);
 
-        if (elapsedMs >= 1000)
+        if (elapsedMs >= 750)
         {
             enterState(State::TurnMinus180, nowMs);
         }
@@ -217,7 +240,7 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(startHeadingDeg_ - 180.0f);
 
-        if (elapsedMs >= 3000)
+        if (elapsedMs >= 5000)
         {
             enterState(State::ExitRequested, nowMs);
         }

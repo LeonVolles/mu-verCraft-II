@@ -336,6 +336,7 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 
 		let ws;
 		let sendPending = false;
+		let pollTimer = null;
 		const state = { lift: 0, thrust: 0, steering: 0, motorsEnabled: false, autoMode: false };
 		let autoModeRequested = false;
 		// Track active pointer IDs to make "spring back to 0" reliable on mobile.
@@ -391,6 +392,47 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			modeBtn.classList.toggle('on', autoModeRequested);
 		}
 
+		async function pollDebugOnce() {
+			try {
+				const res = await fetch('/debug', { cache: 'no-store' });
+				if (!res.ok) return;
+				const j = await res.json();
+
+				const yaw = j && j.yaw && typeof j.yaw.deg === 'number' ? j.yaw.deg : NaN;
+				if (isFinite(yaw)) {
+					const deg = Math.round(((yaw % 360) + 360) % 360);
+					headingBox.textContent = String(deg);
+				}
+
+				const autoMode = j && j.mode && typeof j.mode.autoMode === 'boolean' ? j.mode.autoMode : null;
+				if (autoMode !== null) {
+					state.autoMode = autoMode;
+					setAutoModeUi(state.autoMode);
+				}
+
+				const battV = j && j.battery && typeof j.battery.V === 'number' ? j.battery.V : NaN;
+				if (isFinite(battV)) {
+					metricBatt.textContent = `Batt: ${battV.toFixed(2)} V`;
+					updateBatteryUi(battV);
+				}
+				const usedMah = j && j.battery && typeof j.battery.mAh === 'number' ? j.battery.mAh : NaN;
+				if (isFinite(usedMah)) {
+					metricCurrent.textContent = `Used: ${usedMah.toFixed(0)} mAh`;
+				}
+			} catch (_) { /* ignore */ }
+		}
+
+		function startDebugPolling() {
+			if (pollTimer != null) return;
+			pollDebugOnce();
+			pollTimer = setInterval(pollDebugOnce, 250);
+		}
+		function stopDebugPolling() {
+			if (pollTimer == null) return;
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+
 		function connectWs() {
 			const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 			ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -398,12 +440,14 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			ws.onopen = () => {
 				setStatus('Connected', true);
 				modeBtn.disabled = false;
+				startDebugPolling();
 				sendState(true);
 			};
 
 			ws.onclose = () => {
 				setStatus('Reconnecting...', false);
 				modeBtn.disabled = true;
+				stopDebugPolling();
 				state.autoMode = false;
 				setAutoModeUi(false);
 				updateBatteryUi(NaN);
@@ -424,10 +468,6 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 			ws.onmessage = (evt) => {
 				try {
 					const data = JSON.parse(evt.data);
-					if (typeof data.yaw === 'number' && isFinite(data.yaw)) {
-						const deg = Math.round(((data.yaw % 360) + 360) % 360);
-						headingBox.textContent = String(deg);
-					}
 					if (typeof data.thrust === 'number') {
 						state.thrust = data.thrust;
 						thrust.value = data.thrust;
@@ -438,17 +478,6 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 					}
 					if (typeof data.motorsEnabled === 'boolean') {
 						state.motorsEnabled = data.motorsEnabled;
-					}
-					if (typeof data.autoMode === 'boolean') {
-						state.autoMode = data.autoMode;
-						setAutoModeUi(state.autoMode);
-					}
-					if (typeof data.batt === 'number') {
-						metricBatt.textContent = `Batt: ${data.batt.toFixed(2)} V`;
-						updateBatteryUi(data.batt);
-					}
-					if (typeof data.mah === 'number') {
-						metricCurrent.textContent = `Used: ${data.mah.toFixed(0)} mAh`;
 					}
 					updateLabels();
 				} catch (_) { /* ignore parse errors */ }
@@ -625,7 +654,156 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-NetworkPiloting::NetworkPiloting() : server_(global_WebServerPort), ws_("/ws"), lift_(0.0f), thrust_(0.0f), steering_(0.0f), motorsEnabled_(false), autoModeRequested_(false) {}
+// Minimal PID tuning page (no external assets).
+static const char PID_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>PID Tuning</title>
+	<style>
+		:root { color-scheme: dark; }
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 16px; background: #0b0d12; color: #e7e9ee; }
+		h1 { margin: 0 0 10px; font-size: 20px; }
+		.card { background: #121724; border: 1px solid #232b3d; border-radius: 12px; padding: 12px; margin: 12px 0; }
+		.row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+		label { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 6px; }
+		input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #2a3550; background: #0d1220; color: #e7e9ee; font-size: 14px; }
+		.btnRow { display: flex; gap: 10px; align-items: center; }
+		button { padding: 10px 14px; border-radius: 10px; border: 1px solid #2a3550; background: #1b2540; color: #e7e9ee; font-weight: 600; }
+		button:active { transform: translateY(1px); }
+		.status { font-size: 13px; opacity: 0.9; }
+		a { color: #93b4ff; text-decoration: none; }
+	</style>
+</head>
+<body>
+	<h1>PID Tuning</h1>
+	<div class="status" id="status">Loading…</div>
+
+	<div class="card">
+		<div style="margin-bottom:8px; font-weight:700;">Yaw-rate PID (inner loop)</div>
+		<div class="row">
+			<div><label for="yawKp">Kp</label><input id="yawKp" inputmode="decimal" /></div>
+			<div><label for="yawKi">Ki</label><input id="yawKi" inputmode="decimal" /></div>
+			<div><label for="yawKd">Kd</label><input id="yawKd" inputmode="decimal" /></div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div style="margin-bottom:8px; font-weight:700;">Heading PID (outer loop)</div>
+		<div class="row">
+			<div><label for="headingKp">Kp</label><input id="headingKp" inputmode="decimal" /></div>
+			<div><label for="headingKi">Ki</label><input id="headingKi" inputmode="decimal" /></div>
+			<div><label for="headingKd">Kd</label><input id="headingKd" inputmode="decimal" /></div>
+		</div>
+	</div>
+
+	<div class="btnRow">
+		<button id="refreshBtn">Refresh</button>
+		<button id="applyBtn">Apply</button>
+		<div class="status" style="margin-left:auto;"><a href="/">Back</a></div>
+	</div>
+
+	<script>
+		const statusEl = document.getElementById('status');
+		const ids = ['yawKp','yawKi','yawKd','headingKp','headingKi','headingKd'];
+		const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+
+		function setStatus(text) { statusEl.textContent = text; }
+		function fmt(v) {
+			if (typeof v !== 'number' || !isFinite(v)) return '';
+			return String(v);
+		}
+		function readNum(id) {
+			const s = (el[id].value || '').trim();
+			const v = Number(s);
+			return isFinite(v) ? v : NaN;
+		}
+
+		async function refresh() {
+			try {
+				setStatus('Loading…');
+				const res = await fetch('/pid.json', { cache: 'no-store' });
+				const j = await res.json();
+				el.yawKp.value = fmt(j?.yaw?.kp);
+				el.yawKi.value = fmt(j?.yaw?.ki);
+				el.yawKd.value = fmt(j?.yaw?.kd);
+				el.headingKp.value = fmt(j?.heading?.kp);
+				el.headingKi.value = fmt(j?.heading?.ki);
+				el.headingKd.value = fmt(j?.heading?.kd);
+				setStatus('Ready');
+			} catch (e) {
+				setStatus('Error loading /pid.json');
+			}
+		}
+
+		async function apply() {
+			const body = new URLSearchParams({
+				yawKp: String(readNum('yawKp')),
+				yawKi: String(readNum('yawKi')),
+				yawKd: String(readNum('yawKd')),
+				headingKp: String(readNum('headingKp')),
+				headingKi: String(readNum('headingKi')),
+				headingKd: String(readNum('headingKd')),
+			}).toString();
+
+			try {
+				setStatus('Applying…');
+				const res = await fetch('/pid', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body,
+				});
+				const j = await res.json().catch(() => null);
+				if (!res.ok || !j?.ok) {
+					setStatus(j?.error || 'Update rejected');
+					return;
+				}
+				setStatus('Applied');
+				setTimeout(refresh, 200);
+			} catch (e) {
+				setStatus('Error applying PID');
+			}
+		}
+
+		document.getElementById('refreshBtn').addEventListener('click', refresh);
+		document.getElementById('applyBtn').addEventListener('click', apply);
+		refresh();
+	</script>
+</body>
+</html>
+)rawliteral";
+
+NetworkPiloting::NetworkPiloting()
+	: server_(global_WebServerPort),
+	  ws_("/ws"),
+	  wsMutex_(xSemaphoreCreateMutex()),
+	  lift_(0.0f),
+	  thrust_(0.0f),
+	  steering_(0.0f),
+	  motorsEnabled_(false),
+	  autoModeRequested_(false)
+{
+}
+
+bool NetworkPiloting::lockWs(uint32_t timeoutTicks)
+{
+	if (wsMutex_ == nullptr)
+	{
+		return true;
+	}
+	return xSemaphoreTake(wsMutex_, timeoutTicks) == pdTRUE;
+}
+
+void NetworkPiloting::unlockWs()
+{
+	if (wsMutex_ == nullptr)
+	{
+		return;
+	}
+	xSemaphoreGive(wsMutex_);
+}
 
 void NetworkPiloting::begin()
 {
@@ -665,6 +843,92 @@ void NetworkPiloting::begin()
 	// Serve embedded page (with runtime-injected presets)
 	server_.on("/", HTTP_GET, sendControllerHtml);
 	server_.on("/controller.html", HTTP_GET, sendControllerHtml);
+
+	// Debug endpoint: returns JSON. Useful when no serial monitor is attached.
+	server_.on("/debug", HTTP_GET, [this](AsyncWebServerRequest *request)
+			   {
+				char msg[768];
+				size_t n = 0;
+				if (debugProvider_)
+				{
+					n = debugProvider_(msg, sizeof(msg));
+				}
+				if (n == 0)
+				{
+					const int nn = snprintf(
+						msg,
+						sizeof(msg),
+						"{\"ok\":true,\"lift\":%.1f,\"thrust\":%.1f,\"steering\":%.1f,\"motorsEnabled\":%s,\"autoMode\":%s}",
+						(double)lift_,
+						(double)thrust_,
+						(double)steering_,
+						motorsEnabled_ ? "true" : "false",
+						autoModeRequested_ ? "true" : "false");
+					n = (nn > 0) ? (size_t)nn : 0;
+				}
+				if (n >= sizeof(msg))
+				{
+					n = sizeof(msg) - 1;
+				}
+				msg[n] = '\0';
+				request->send(200, "application/json", msg); });
+
+	// PID tuning page + endpoints.
+	server_.on("/pid", HTTP_GET, [](AsyncWebServerRequest *request)
+			   { request->send_P(200, "text/html", PID_HTML); });
+
+	server_.on("/pid.json", HTTP_GET, [this](AsyncWebServerRequest *request)
+			   {
+				PidTunings t{0, 0, 0, 0, 0, 0};
+				if (pidGetProvider_)
+				{
+					pidGetProvider_(t);
+				}
+				char msg[256];
+				int n = snprintf(msg, sizeof(msg),
+								   "{\"ok\":true,\"yaw\":{\"kp\":%.6f,\"ki\":%.6f,\"kd\":%.6f},\"heading\":{\"kp\":%.6f,\"ki\":%.6f,\"kd\":%.6f}}",
+								   (double)t.yawKp, (double)t.yawKi, (double)t.yawKd,
+								   (double)t.headingKp, (double)t.headingKi, (double)t.headingKd);
+				if (n < 0)
+					n = 0;
+				if ((size_t)n >= sizeof(msg))
+					n = (int)sizeof(msg) - 1;
+				msg[n] = '\0';
+				request->send(200, "application/json", msg); });
+
+	server_.on("/pid", HTTP_POST, [this](AsyncWebServerRequest *request)
+			   {
+				auto getFloatParam = [request](const char *name, float &out) -> bool
+				{
+					if (!request->hasParam(name, true))
+						return false;
+					AsyncWebParameter *p = request->getParam(name, true);
+					if (p == nullptr)
+						return false;
+					const String &v = p->value();
+					out = v.toFloat();
+					return isfinite(out);
+				};
+
+				PidTunings t;
+				if (!getFloatParam("yawKp", t.yawKp) || !getFloatParam("yawKi", t.yawKi) || !getFloatParam("yawKd", t.yawKd) ||
+					!getFloatParam("headingKp", t.headingKp) || !getFloatParam("headingKi", t.headingKi) || !getFloatParam("headingKd", t.headingKd))
+				{
+					request->send(400, "application/json", "{\"ok\":false,\"error\":\"Missing/invalid fields\"}");
+					return;
+				}
+
+				bool ok = false;
+				if (pidSetHandler_)
+				{
+					ok = pidSetHandler_(t);
+				}
+				if (!ok)
+				{
+					request->send(400, "application/json", "{\"ok\":false,\"error\":\"PID update rejected\"}");
+					return;
+				}
+				request->send(200, "application/json", "{\"ok\":true}"); });
 	server_.onNotFound(sendControllerHtml);
 
 	server_.addHandler(&ws_);
@@ -674,7 +938,12 @@ void NetworkPiloting::begin()
 
 void NetworkPiloting::loop()
 {
+	if (!lockWs(0))
+	{
+		return;
+	}
 	ws_.cleanupClients();
+	unlockWs();
 }
 
 void NetworkPiloting::setLiftCallback(const std::function<void(float)> &callback)
@@ -700,6 +969,21 @@ void NetworkPiloting::setArmCallback(const std::function<void(bool)> &callback)
 void NetworkPiloting::setAutoModeCallback(const std::function<void(bool)> &callback)
 {
 	onAutoMode_ = callback;
+}
+
+void NetworkPiloting::setPidGetProvider(const std::function<void(PidTunings &out)> &provider)
+{
+	pidGetProvider_ = provider;
+}
+
+void NetworkPiloting::setPidSetHandler(const std::function<bool(const PidTunings &in)> &handler)
+{
+	pidSetHandler_ = handler;
+}
+
+void NetworkPiloting::setDebugProvider(const std::function<size_t(char *out, size_t outSize)> &provider)
+{
+	debugProvider_ = provider;
 }
 
 float NetworkPiloting::getLift() const
@@ -856,11 +1140,24 @@ void NetworkPiloting::handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocke
 
 		if (updated)
 		{
-			server->textAll(String("{\"lift\":") + String(lift_, 1) +
-							",\"thrust\":" + String(thrust_, 1) +
-							",\"steering\":" + String(steering_, 1) +
-							",\"motorsEnabled\":" + (motorsEnabled_ ? "true" : "false") +
-							",\"autoMode\":" + (autoModeRequested_ ? "true" : "false") + "}");
+			char msg[192];
+			const int n = snprintf(
+				msg,
+				sizeof(msg),
+				"{\"lift\":%.1f,\"thrust\":%.1f,\"steering\":%.1f,\"motorsEnabled\":%s,\"autoMode\":%s}",
+				(double)lift_,
+				(double)thrust_,
+				(double)steering_,
+				motorsEnabled_ ? "true" : "false",
+				autoModeRequested_ ? "true" : "false");
+			if (n > 0)
+			{
+				if (lockWs(0))
+				{
+					server->textAll(msg);
+					unlockWs();
+				}
+			}
 		}
 	}
 }
@@ -876,34 +1173,67 @@ void NetworkPiloting::applyArm(bool enabled)
 
 void NetworkPiloting::sendTelemetry(float voltage, float current, float usedMah)
 {
+	if (!lockWs(0))
+	{
+		return;
+	}
 	if (ws_.count() == 0)
 	{
+		unlockWs();
 		return; // no clients to receive this frame
 	}
 	// Compact JSON broadcast to all clients; values are in volts/amps/mAh already.
-	ws_.textAll(String("{\"batt\":") + String(voltage, 2) +
-				",\"curr\":" + String(current, 2) +
-				",\"mah\":" + String(usedMah, 0) + "}");
+	char msg[96];
+	const int n = snprintf(
+		msg,
+		sizeof(msg),
+		"{\"batt\":%.2f,\"curr\":%.2f,\"mah\":%.0f}",
+		(double)voltage,
+		(double)current,
+		(double)usedMah);
+	if (n > 0)
+	{
+		ws_.textAll(msg);
+	}
+	unlockWs();
 }
 
 void NetworkPiloting::sendHeading(float heading_deg)
 {
+	if (!lockWs(0))
+	{
+		return;
+	}
 	if (ws_.count() == 0)
 	{
+		unlockWs();
 		return;
 	}
 	if (!isfinite(heading_deg))
 	{
+		unlockWs();
 		return;
 	}
-	ws_.textAll(String("{\"yaw\":") + String(heading_deg, 1) + "}");
+	char msg[48];
+	const int n = snprintf(msg, sizeof(msg), "{\"yaw\":%.1f}", (double)heading_deg);
+	if (n > 0)
+	{
+		ws_.textAll(msg);
+	}
+	unlockWs();
 }
 
 void NetworkPiloting::sendAutoMode(bool enabled)
 {
-	if (ws_.count() == 0)
+	if (!lockWs(0))
 	{
 		return;
 	}
-	ws_.textAll(String("{\"autoMode\":") + (enabled ? "true" : "false") + "}");
+	if (ws_.count() == 0)
+	{
+		unlockWs();
+		return;
+	}
+	ws_.textAll(enabled ? "{\"autoMode\":true}" : "{\"autoMode\":false}");
+	unlockWs();
 }
