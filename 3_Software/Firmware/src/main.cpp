@@ -290,6 +290,7 @@ void task_imu(void *parameter)
   // Optional: calibrate accel reference (keep craft still + level for ~1s)
   if (imu.hasAccel())
   {
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // wait 2 s before starting calibration
     Serial.println("[IMU] calibrating accel reference...");
     imu.calibrateAccelReference(200, 5);
     Serial.println("[IMU] accel calibration done");

@@ -65,11 +65,6 @@ const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 const uint16_t global_WebServerPort = 80;
 
 // *************************************************
-// Gyro/IMU/Complementary filter settings
-// *************************************************
-const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more, old 0.9f
-
-// *************************************************
 // Magnetometer calibration (hard-iron offsets)
 // *************************************************
 // Replace these values with the output of MagCalibrator tool found in 3_Software of this git repo
@@ -83,6 +78,11 @@ const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter 
 const int16_t global_MagOffsetX = -619;
 const int16_t global_MagOffsetY = 989;
 const int16_t global_MagOffsetZ = 44;
+
+// *************************************************
+// Gyro/IMU/Complementary filter settings
+// *************************************************
+const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more, old 0.9f
 
 // *************************************************
 // Control loop constants (example, if you enable them)
