@@ -2,22 +2,23 @@
 ## Network piloting (web UI + WebSocket control/telemetry)
 
 ### Main idea
-This module hosts a small, embedded controller webpage and a WebSocket endpoint to send pilot commands (lift/thrust/steering + arm) to the firmware and to stream basic telemetry back to the browser.
+This module hosts a small, embedded controller webpage and a WebSocket endpoint to send pilot commands (lift/thrust/steering + arm) to the firmware.
+
+Telemetry/state (heading, battery, mode state, diagnostics) is provided via an HTTP JSON endpoint (`/debug`) and is polled by the webpage.
 
 ### Where it is used / how it is called
 - Class/API: [lib/network_piloting/include/network_piloting.h](lib/network_piloting/include/network_piloting.h) (implementation in [lib/network_piloting/src/network_piloting.cpp](lib/network_piloting/src/network_piloting.cpp)).
 - Instantiated as a global object in [src/main.cpp](src/main.cpp).
 - Started in `setup()` via `networkPiloting.begin()` after the AP is created by `wifiManager.startAccessPoint(...)`.
 - `setLiftCallback()`, `setThrustCallback()`, `setSteeringCallback()`, `setArmCallback()` are wired in [src/main.cpp](src/main.cpp) to push the received commands into the control queue.
-- Runtime maintenance (`networkPiloting.loop()` → `ws_.cleanupClients()`) is called from `task_wifiManager()` in [src/main.cpp](src/main.cpp), which is pinned to ESP32 **core 0**.
-- Telemetry broadcast is fed from the battery task via `networkPiloting.sendTelemetry(v, a, mah)` in [src/main.cpp](src/main.cpp).
+- `/debug` is configured inside `begin()` and returns JSON produced by an optional debug provider callback (`setDebugProvider(...)`) wired in [src/main.cpp](src/main.cpp).
 
 ### Functionalities implemented
 
 #### Website UI
 - **Embedded controller page:** the HTML/CSS/JS UI is stored in flash (`PROGMEM`) and served for `/`, `/controller.html`, and as a fallback for unknown routes.
 - **WebSocket link (`/ws`):** the browser opens a WebSocket and sends JSON messages like `{ "lift": 60, "thrust": -10, "steering": 25, "motorsEnabled": true }`.
-- **Telemetry to UI:** the firmware can broadcast compact JSON frames to all clients (currently battery voltage/current/used mAh).
+- **Telemetry/state to UI:** the webpage polls `/debug` (HTTP) and updates heading/battery/auto-mode UI from the returned JSON.
 - **Client-side safety UX:** the page springs controls back to zero on pointer release and also resets on tab blur / page hidden / WS disconnect.
 
 #### Control semantics + safety
@@ -28,9 +29,10 @@ This module hosts a small, embedded controller webpage and a WebSocket endpoint 
 
 ### Methods (overview)
 - `begin()` – configures routes for the embedded page, attaches the WebSocket handler, and starts the async webserver.
-- `loop()` – performs periodic housekeeping (`cleanupClients()`).
+- `setDebugProvider(...)` – registers a callback used to generate the `/debug` JSON.
+- `loop()` – optional periodic housekeeping (`cleanupClients()`). (Currently not required by the main application flow.)
 - `set*Callback(...)` – registers callbacks for lift/thrust/steering/arm updates.
-- `sendTelemetry(voltage, current, usedMah)` – broadcasts telemetry JSON to all connected clients (no-op if no clients).
+- `sendTelemetry(voltage, current, usedMah)` – broadcasts telemetry JSON to all connected clients (no-op if no clients). (Currently the webpage uses `/debug` polling instead.)
 - `getLift()`, `getThrust()`, `getSteering()`, `motorsEnabled()` – returns latest received command state.
 
 ### Parameters used

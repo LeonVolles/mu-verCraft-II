@@ -26,15 +26,16 @@ This file is the integration point of the whole firmware: it wires together all 
 	- Motor task computes the yaw-rate control command (`diffCmd`) via `PIDController`.
 	- `MotorMixer` converts lift/thrust/diff into 4 motor percentages.
 	- `MotorCtrl` sends DShot commands to the ESCs.
-- **Battery task → NetworkPiloting telemetry**
-	- Battery task publishes voltage/current/mAh via `networkPiloting.sendTelemetry(...)`.
+- **Battery task → shared telemetry → `/debug`**
+	- Battery task updates shared telemetry values (voltage/current/mAh).
+	- The web UI reads telemetry/state via HTTP polling of `/debug`.
 
 #### Task map (what each task does)
 The firmware creates multiple tasks in `setup()` using `xTaskCreatePinnedToCore(...)`.
 
 ##### task_wifiManager (core 0)
-- Calls `networkPiloting.loop()` periodically (every ~50ms).
-- Purpose: housekeeping (WebSocket client cleanup); the async server handles network I/O callbacks.
+- Purpose: lightweight periodic diagnostics (heap/stack prints).
+- Note: the async server handles network I/O callbacks in its own context; telemetry/state for the UI is served via `/debug`.
 
 ##### task_imu (core 1)
 - Initializes IMU, then runs a periodic loop at **200 Hz** (`vTaskDelayUntil(..., 5ms)`).
@@ -64,7 +65,7 @@ If you later enable a non-zero heading-controller `Kd`, ensure the yaw-rate sign
 
 ##### task_batteryMonitor (core 1)
 - Calls `batteryMonitor.update()` and prints voltage/current/mAh.
-- Sends telemetry to web clients once per second.
+- Updates shared telemetry state used by `/debug`.
 
 ##### task_blink (core 1)
 - Simple LED blink for testing.
@@ -74,7 +75,7 @@ If you later enable a non-zero heading-controller `Kd`, ensure the yaw-rate sign
 - **Real-time scheduling**: run IMU acquisition and control loop periodically with `vTaskDelayUntil`.
 - **Command & telemetry plumbing**:
 	- WebSocket commands → queue → control loop.
-	- Battery telemetry → WebSocket broadcast.
+	- Telemetry/state → `/debug` JSON (polled by the web UI).
 - **Core separation**: keep network housekeeping on core 0; keep control/sensing on core 1.
 - **Safety behaviors**: disarm defaults, lift-off handling, PID reset on stale sensor data.
 

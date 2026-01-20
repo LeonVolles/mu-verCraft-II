@@ -7,7 +7,8 @@ This module reads battery voltage and current from ADC pins, applies simple cali
 ### Where it is used / how it is called
 - Class/API: [lib/battery_monitor/include/battery_monitor.h](lib/battery_monitor/include/battery_monitor.h) (implementation in [lib/battery_monitor/src/battery_monitor.cpp](lib/battery_monitor/src/battery_monitor.cpp)).
 - Instantiated as a global object in [src/main.cpp](src/main.cpp) and initialized in `setup()` via `batteryMonitor.init(...)`.
-- Updated periodically inside the RTOS task `task_batteryMonitor()` in [src/main.cpp](src/main.cpp), which also forwards telemetry through `networkPiloting.sendTelemetry(v, a, mah)`.
+- Updated periodically inside the RTOS task `task_batteryMonitor()` in [src/main.cpp](src/main.cpp).
+- The task updates shared telemetry values (voltage/current/mAh) that are exposed to the UI via the `/debug` endpoint.
 
 ### Functionalities implemented
 - **Voltage measurement (V):** reads an ADC pin in mV and scales it back to battery voltage using a divider ratio.
