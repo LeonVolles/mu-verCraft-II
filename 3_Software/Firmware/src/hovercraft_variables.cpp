@@ -59,7 +59,7 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // *************************************************
 // Wifi SSID, PW, IP addresses
 // *************************************************
-const char global_WifiApSsid[] = "µ-verCraft-II AP";
+const char global_WifiApSsid[] = "µ-verCraft-II AP2";
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 // Note: WebUi/Website: 192.168.4.1
 const uint16_t global_WebServerPort = 80;
