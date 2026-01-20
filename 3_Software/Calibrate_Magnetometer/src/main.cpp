@@ -9,18 +9,10 @@
 //
 // How to use (recommended)
 // ------------------------
-// 1) In platformio.ini, temporarily add the build flag:
-//      -D MAGNETOMETER_CALIBRATION
-//    Example:
-//      build_flags =
-//        -D SDA_PIN=5
-//        -D SCL_PIN=6
-//        -D MAGNETOMETER_CALIBRATION
-//
-// 2) Upload as usual.
-// 3) Open Serial Monitor at 115200 baud.
-// 4) Follow the on-screen rotation instructions.
-// 5) Copy the printed lines like:
+// 1) Upload as usual.
+// 2) Open Serial Monitor at 115200 baud.
+// 3) Follow the on-screen rotation instructions.
+// 4) Copy the printed lines like:
 //      const int16_t global_MagOffsetX = ...;
 //      const int16_t global_MagOffsetY = ...;
 //      const int16_t global_MagOffsetZ = ...;
