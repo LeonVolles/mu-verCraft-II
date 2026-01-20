@@ -17,6 +17,7 @@ Telemetry/state (heading, battery, mode state, diagnostics) is provided via an H
 
 #### Website UI
 - **Embedded controller page:** the HTML/CSS/JS UI is stored in flash (`PROGMEM`) and served for `/`, `/controller.html`, and as a fallback for unknown routes.
+- **PID tuning page (`/pid`):** a minimal page with 6 text boxes to edit yaw-rate PID and heading PID gains live (no reflashing). It uses `/pid.json` (GET) and `/pid` (POST).
 - **WebSocket link (`/ws`):** the browser opens a WebSocket and sends JSON messages like `{ "lift": 60, "thrust": -10, "steering": 25, "motorsEnabled": true }`.
 - **Telemetry/state to UI:** the webpage polls `/debug` (HTTP) and updates heading/battery/auto-mode UI from the returned JSON.
 - **Client-side safety UX:** the page springs controls back to zero on pointer release and also resets on tab blur / page hidden / WS disconnect.
@@ -30,6 +31,7 @@ Telemetry/state (heading, battery, mode state, diagnostics) is provided via an H
 ### Methods (overview)
 - `begin()` – configures routes for the embedded page, attaches the WebSocket handler, and starts the async webserver.
 - `setDebugProvider(...)` – registers a callback used to generate the `/debug` JSON.
+- `setPidGetProvider(...)` / `setPidSetHandler(...)` – optional hooks to support `/pid` and `/pid.json` for live PID tuning.
 - `loop()` – optional periodic housekeeping (`cleanupClients()`). (Currently not required by the main application flow.)
 - `set*Callback(...)` – registers callbacks for lift/thrust/steering/arm updates.
 - `sendTelemetry(voltage, current, usedMah)` – broadcasts telemetry JSON to all connected clients (no-op if no clients). (Currently the webpage uses `/debug` polling instead.)

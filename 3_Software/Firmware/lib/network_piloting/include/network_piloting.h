@@ -48,6 +48,16 @@
 class NetworkPiloting
 {
 public:
+	struct PidTunings
+	{
+		float yawKp;
+		float yawKi;
+		float yawKd;
+		float headingKp;
+		float headingKi;
+		float headingKd;
+	};
+
 	NetworkPiloting();
 
 	void begin();
@@ -58,6 +68,11 @@ public:
 	void setSteeringCallback(const std::function<void(float)> &callback);
 	void setArmCallback(const std::function<void(bool)> &callback);
 	void setAutoModeCallback(const std::function<void(bool)> &callback);
+	// Optional: provide current PID tunings for /pid.json.
+	void setPidGetProvider(const std::function<void(PidTunings &out)> &provider);
+	// Optional: handle PID tuning updates posted to /pid.
+	// Return true if values were accepted.
+	void setPidSetHandler(const std::function<bool(const PidTunings &in)> &handler);
 	// Optional: provide JSON for /debug endpoint.
 	// The callback should write a null-terminated JSON string into out (max outSize).
 	// Return number of bytes written (excluding null terminator). Return 0 to fall back to default.
@@ -85,6 +100,8 @@ private:
 	std::function<void(float)> onSteering_;
 	std::function<void(bool)> onArm_;
 	std::function<void(bool)> onAutoMode_;
+	std::function<void(PidTunings &out)> pidGetProvider_;
+	std::function<bool(const PidTunings &in)> pidSetHandler_;
 	std::function<size_t(char *out, size_t outSize)> debugProvider_;
 
 	void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);

@@ -99,9 +99,9 @@ const float global_YawCenterSensitivity = 450.0f;          // sensitivity around
 // *************************************************
 // Yaw RATE PID (deg/s).
 // Start conservative; tune on hardware.
-const float global_YawRatePid_Kp = 2.0f * 0.5f;   // defaults where 0.25f
-const float global_YawRatePid_Ki = 2.0f * 0.1f;   // defaults where 0.05f
-const float global_YawRatePid_Kd = 3.0f * 0.004f; // defaults where 0.002f
+const float global_YawRatePid_Kp = 2.6f;
+const float global_YawRatePid_Ki = 5.0f;
+const float global_YawRatePid_Kd = 0.06f;
 
 // PID output is fed into MotorMixer::setDiffThrust() which expects [-100..100].
 const float global_YawRatePid_OutputLimit = 100.0f;

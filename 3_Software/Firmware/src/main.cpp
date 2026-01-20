@@ -91,6 +91,28 @@ static bool g_battTelemetryPending = false;
 // RTC retained diagnostics (helps when the board keeps rebooting).
 RTC_DATA_ATTR static uint32_t g_bootCount = 0;
 
+// Runtime-tunable PID gains (editable via /pid without reflashing).
+// These are initialized from the compile-time defaults in hovercraft_variables.
+struct RuntimePidTunings
+{
+  float yawKp;
+  float yawKi;
+  float yawKd;
+  float headingKp;
+  float headingKi;
+  float headingKd;
+};
+
+static portMUX_TYPE g_pidMux = portMUX_INITIALIZER_UNLOCKED;
+static RuntimePidTunings g_pidTunings{
+    global_YawRatePid_Kp,
+    global_YawRatePid_Ki,
+    global_YawRatePid_Kd,
+    global_HeadingPid_Kp,
+    global_HeadingPid_Ki,
+    global_HeadingPid_Kd};
+static bool g_pidTuningsDirty = false;
+
 // New mode: heading hold (triggered via web UI "M" button).
 static volatile bool g_headingHoldActive = false;
 static volatile float g_headingTarget_deg = 0.0f;
@@ -362,20 +384,30 @@ void task_motorManagement(void *parameter)
   };
 
   PIDController yawRatePid;
-  yawRatePid.init(
-      global_YawRatePid_Kp,
-      global_YawRatePid_Ki,
-      global_YawRatePid_Kd,
-      global_YawRatePid_OutputLimit,
-      global_YawRatePid_IntegratorLimit);
-
   HeadingController headingPid;
-  headingPid.init(
-      global_HeadingPid_Kp,
-      global_HeadingPid_Ki,
-      global_HeadingPid_Kd,
-      global_HeadingPid_OutputLimit_dps,
-      global_HeadingPid_IntegratorLimit_dps);
+
+  auto applyPidTunings = [&](const RuntimePidTunings &t)
+  {
+    yawRatePid.init(
+        t.yawKp,
+        t.yawKi,
+        t.yawKd,
+        global_YawRatePid_OutputLimit,
+        global_YawRatePid_IntegratorLimit);
+
+    headingPid.init(
+        t.headingKp,
+        t.headingKi,
+        t.headingKd,
+        global_HeadingPid_OutputLimit_dps,
+        global_HeadingPid_IntegratorLimit_dps);
+  };
+
+  RuntimePidTunings localTunings;
+  portENTER_CRITICAL(&g_pidMux);
+  localTunings = g_pidTunings;
+  portEXIT_CRITICAL(&g_pidMux);
+  applyPidTunings(localTunings);
 
   bool lastHeadingHoldActive = false;
   bool lastMotorsEnabled = false;
@@ -392,6 +424,28 @@ void task_motorManagement(void *parameter)
 
   for (;;)
   {
+    // Apply PID tuning updates (from /pid) at a safe point.
+    bool pidDirty = false;
+    portENTER_CRITICAL(&g_pidMux);
+    pidDirty = g_pidTuningsDirty;
+    if (pidDirty)
+    {
+      localTunings = g_pidTunings;
+      g_pidTuningsDirty = false;
+    }
+    portEXIT_CRITICAL(&g_pidMux);
+    if (pidDirty)
+    {
+      applyPidTunings(localTunings);
+      Serial.printf("[PID] updated yaw(kp=%.4f ki=%.4f kd=%.4f) heading(kp=%.4f ki=%.4f kd=%.4f)\n",
+                    (double)localTunings.yawKp,
+                    (double)localTunings.yawKi,
+                    (double)localTunings.yawKd,
+                    (double)localTunings.headingKp,
+                    (double)localTunings.headingKi,
+                    (double)localTunings.headingKd);
+    }
+
     const uint32_t nowUs = micros();
     float dt_s = (nowUs - lastUpdateUs) * 1e-6f;
     lastUpdateUs = nowUs;
@@ -835,6 +889,38 @@ void setup()
       autonomousSequence.requestStop();
       Serial.println("[AUTO] autoMode OFF -> abort sequence");
     } });
+
+  // Provide live PID tuning via /pid (no reflashing).
+  networkPiloting.setPidGetProvider([](NetworkPiloting::PidTunings &out)
+                                    {
+                                      portENTER_CRITICAL(&g_pidMux);
+                                      out.yawKp = g_pidTunings.yawKp;
+                                      out.yawKi = g_pidTunings.yawKi;
+                                      out.yawKd = g_pidTunings.yawKd;
+                                      out.headingKp = g_pidTunings.headingKp;
+                                      out.headingKi = g_pidTunings.headingKi;
+                                      out.headingKd = g_pidTunings.headingKd;
+                                      portEXIT_CRITICAL(&g_pidMux); });
+
+  networkPiloting.setPidSetHandler([](const NetworkPiloting::PidTunings &in) -> bool
+                                   {
+                                     // Minimal validation: reject NaN/Inf.
+                                     if (!isfinite(in.yawKp) || !isfinite(in.yawKi) || !isfinite(in.yawKd) ||
+                                         !isfinite(in.headingKp) || !isfinite(in.headingKi) || !isfinite(in.headingKd))
+                                     {
+                                       return false;
+                                     }
+
+                                     portENTER_CRITICAL(&g_pidMux);
+                                     g_pidTunings.yawKp = in.yawKp;
+                                     g_pidTunings.yawKi = in.yawKi;
+                                     g_pidTunings.yawKd = in.yawKd;
+                                     g_pidTunings.headingKp = in.headingKp;
+                                     g_pidTunings.headingKi = in.headingKi;
+                                     g_pidTunings.headingKd = in.headingKd;
+                                     g_pidTuningsDirty = true;
+                                     portEXIT_CRITICAL(&g_pidMux);
+                                     return true; });
 
   // Provide /debug endpoint JSON (useful when no serial monitor is attached).
   networkPiloting.setDebugProvider([](char *out, size_t outSize) -> size_t

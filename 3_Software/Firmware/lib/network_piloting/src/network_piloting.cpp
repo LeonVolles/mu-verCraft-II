@@ -654,6 +654,127 @@ static const char CONTROLLER_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+// Minimal PID tuning page (no external assets).
+static const char PID_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>PID Tuning</title>
+	<style>
+		:root { color-scheme: dark; }
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 16px; background: #0b0d12; color: #e7e9ee; }
+		h1 { margin: 0 0 10px; font-size: 20px; }
+		.card { background: #121724; border: 1px solid #232b3d; border-radius: 12px; padding: 12px; margin: 12px 0; }
+		.row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+		label { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 6px; }
+		input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #2a3550; background: #0d1220; color: #e7e9ee; font-size: 14px; }
+		.btnRow { display: flex; gap: 10px; align-items: center; }
+		button { padding: 10px 14px; border-radius: 10px; border: 1px solid #2a3550; background: #1b2540; color: #e7e9ee; font-weight: 600; }
+		button:active { transform: translateY(1px); }
+		.status { font-size: 13px; opacity: 0.9; }
+		a { color: #93b4ff; text-decoration: none; }
+	</style>
+</head>
+<body>
+	<h1>PID Tuning</h1>
+	<div class="status" id="status">Loading…</div>
+
+	<div class="card">
+		<div style="margin-bottom:8px; font-weight:700;">Yaw-rate PID (inner loop)</div>
+		<div class="row">
+			<div><label for="yawKp">Kp</label><input id="yawKp" inputmode="decimal" /></div>
+			<div><label for="yawKi">Ki</label><input id="yawKi" inputmode="decimal" /></div>
+			<div><label for="yawKd">Kd</label><input id="yawKd" inputmode="decimal" /></div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div style="margin-bottom:8px; font-weight:700;">Heading PID (outer loop)</div>
+		<div class="row">
+			<div><label for="headingKp">Kp</label><input id="headingKp" inputmode="decimal" /></div>
+			<div><label for="headingKi">Ki</label><input id="headingKi" inputmode="decimal" /></div>
+			<div><label for="headingKd">Kd</label><input id="headingKd" inputmode="decimal" /></div>
+		</div>
+	</div>
+
+	<div class="btnRow">
+		<button id="refreshBtn">Refresh</button>
+		<button id="applyBtn">Apply</button>
+		<div class="status" style="margin-left:auto;"><a href="/">Back</a></div>
+	</div>
+
+	<script>
+		const statusEl = document.getElementById('status');
+		const ids = ['yawKp','yawKi','yawKd','headingKp','headingKi','headingKd'];
+		const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+
+		function setStatus(text) { statusEl.textContent = text; }
+		function fmt(v) {
+			if (typeof v !== 'number' || !isFinite(v)) return '';
+			return String(v);
+		}
+		function readNum(id) {
+			const s = (el[id].value || '').trim();
+			const v = Number(s);
+			return isFinite(v) ? v : NaN;
+		}
+
+		async function refresh() {
+			try {
+				setStatus('Loading…');
+				const res = await fetch('/pid.json', { cache: 'no-store' });
+				const j = await res.json();
+				el.yawKp.value = fmt(j?.yaw?.kp);
+				el.yawKi.value = fmt(j?.yaw?.ki);
+				el.yawKd.value = fmt(j?.yaw?.kd);
+				el.headingKp.value = fmt(j?.heading?.kp);
+				el.headingKi.value = fmt(j?.heading?.ki);
+				el.headingKd.value = fmt(j?.heading?.kd);
+				setStatus('Ready');
+			} catch (e) {
+				setStatus('Error loading /pid.json');
+			}
+		}
+
+		async function apply() {
+			const body = new URLSearchParams({
+				yawKp: String(readNum('yawKp')),
+				yawKi: String(readNum('yawKi')),
+				yawKd: String(readNum('yawKd')),
+				headingKp: String(readNum('headingKp')),
+				headingKi: String(readNum('headingKi')),
+				headingKd: String(readNum('headingKd')),
+			}).toString();
+
+			try {
+				setStatus('Applying…');
+				const res = await fetch('/pid', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body,
+				});
+				const j = await res.json().catch(() => null);
+				if (!res.ok || !j?.ok) {
+					setStatus(j?.error || 'Update rejected');
+					return;
+				}
+				setStatus('Applied');
+				setTimeout(refresh, 200);
+			} catch (e) {
+				setStatus('Error applying PID');
+			}
+		}
+
+		document.getElementById('refreshBtn').addEventListener('click', refresh);
+		document.getElementById('applyBtn').addEventListener('click', apply);
+		refresh();
+	</script>
+</body>
+</html>
+)rawliteral";
+
 NetworkPiloting::NetworkPiloting()
 	: server_(global_WebServerPort),
 	  ws_("/ws"),
@@ -751,6 +872,63 @@ void NetworkPiloting::begin()
 				}
 				msg[n] = '\0';
 				request->send(200, "application/json", msg); });
+
+	// PID tuning page + endpoints.
+	server_.on("/pid", HTTP_GET, [](AsyncWebServerRequest *request)
+			   { request->send_P(200, "text/html", PID_HTML); });
+
+	server_.on("/pid.json", HTTP_GET, [this](AsyncWebServerRequest *request)
+			   {
+				PidTunings t{0, 0, 0, 0, 0, 0};
+				if (pidGetProvider_)
+				{
+					pidGetProvider_(t);
+				}
+				char msg[256];
+				int n = snprintf(msg, sizeof(msg),
+								   "{\"ok\":true,\"yaw\":{\"kp\":%.6f,\"ki\":%.6f,\"kd\":%.6f},\"heading\":{\"kp\":%.6f,\"ki\":%.6f,\"kd\":%.6f}}",
+								   (double)t.yawKp, (double)t.yawKi, (double)t.yawKd,
+								   (double)t.headingKp, (double)t.headingKi, (double)t.headingKd);
+				if (n < 0)
+					n = 0;
+				if ((size_t)n >= sizeof(msg))
+					n = (int)sizeof(msg) - 1;
+				msg[n] = '\0';
+				request->send(200, "application/json", msg); });
+
+	server_.on("/pid", HTTP_POST, [this](AsyncWebServerRequest *request)
+			   {
+				auto getFloatParam = [request](const char *name, float &out) -> bool
+				{
+					if (!request->hasParam(name, true))
+						return false;
+					AsyncWebParameter *p = request->getParam(name, true);
+					if (p == nullptr)
+						return false;
+					const String &v = p->value();
+					out = v.toFloat();
+					return isfinite(out);
+				};
+
+				PidTunings t;
+				if (!getFloatParam("yawKp", t.yawKp) || !getFloatParam("yawKi", t.yawKi) || !getFloatParam("yawKd", t.yawKd) ||
+					!getFloatParam("headingKp", t.headingKp) || !getFloatParam("headingKi", t.headingKi) || !getFloatParam("headingKd", t.headingKd))
+				{
+					request->send(400, "application/json", "{\"ok\":false,\"error\":\"Missing/invalid fields\"}");
+					return;
+				}
+
+				bool ok = false;
+				if (pidSetHandler_)
+				{
+					ok = pidSetHandler_(t);
+				}
+				if (!ok)
+				{
+					request->send(400, "application/json", "{\"ok\":false,\"error\":\"PID update rejected\"}");
+					return;
+				}
+				request->send(200, "application/json", "{\"ok\":true}"); });
 	server_.onNotFound(sendControllerHtml);
 
 	server_.addHandler(&ws_);
@@ -791,6 +969,16 @@ void NetworkPiloting::setArmCallback(const std::function<void(bool)> &callback)
 void NetworkPiloting::setAutoModeCallback(const std::function<void(bool)> &callback)
 {
 	onAutoMode_ = callback;
+}
+
+void NetworkPiloting::setPidGetProvider(const std::function<void(PidTunings &out)> &provider)
+{
+	pidGetProvider_ = provider;
+}
+
+void NetworkPiloting::setPidSetHandler(const std::function<bool(const PidTunings &in)> &handler)
+{
+	pidSetHandler_ = handler;
 }
 
 void NetworkPiloting::setDebugProvider(const std::function<size_t(char *out, size_t outSize)> &provider)
