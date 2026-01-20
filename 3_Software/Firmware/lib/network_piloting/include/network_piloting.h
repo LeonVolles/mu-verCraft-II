@@ -42,6 +42,7 @@
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <freertos/semphr.h>
 #include <functional>
 
 class NetworkPiloting
@@ -57,6 +58,10 @@ public:
 	void setSteeringCallback(const std::function<void(float)> &callback);
 	void setArmCallback(const std::function<void(bool)> &callback);
 	void setAutoModeCallback(const std::function<void(bool)> &callback);
+	// Optional: provide JSON for /debug endpoint.
+	// The callback should write a null-terminated JSON string into out (max outSize).
+	// Return number of bytes written (excluding null terminator). Return 0 to fall back to default.
+	void setDebugProvider(const std::function<size_t(char *out, size_t outSize)> &provider);
 	void sendTelemetry(float voltage, float current, float usedMah);
 	void sendHeading(float heading_deg);
 	void sendAutoMode(bool enabled);
@@ -69,6 +74,7 @@ public:
 private:
 	AsyncWebServer server_;
 	AsyncWebSocket ws_;
+	SemaphoreHandle_t wsMutex_;
 	float lift_;
 	float thrust_;
 	float steering_;
@@ -79,7 +85,10 @@ private:
 	std::function<void(float)> onSteering_;
 	std::function<void(bool)> onArm_;
 	std::function<void(bool)> onAutoMode_;
+	std::function<size_t(char *out, size_t outSize)> debugProvider_;
 
 	void handleWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
 	void applyArm(bool enabled);
+	bool lockWs(uint32_t timeoutTicks = 0);
+	void unlockWs();
 };

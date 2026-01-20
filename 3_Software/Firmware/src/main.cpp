@@ -7,6 +7,10 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 
+// Reset reason / diagnostics
+#include "esp_system.h"
+#include "esp_heap_caps.h"
+
 // Include file for all global variables
 #include "hovercraft_variables.h"
 
@@ -67,6 +71,7 @@ struct ControlSetpoints
 };
 QueueHandle_t g_controlQueue = nullptr;
 static ControlSetpoints g_latestSetpoints{0.0f, 0.0f, 0.0f, false, false};
+static portMUX_TYPE g_setpointsMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Shared IMU data for controllers (updated by IMU task, consumed by motor/control task)
 static volatile float g_yawRateMeasured_dps = 0.0f;  // yaw rate (deg/s), sign consistent with IMU yaw integration
@@ -76,13 +81,19 @@ static volatile uint32_t g_lastYawRateUpdate_us = 0; // micros() timestamp
 static volatile float g_yawMeasured_deg = 0.0f;
 static volatile uint32_t g_lastYawUpdate_us = 0; // micros() timestamp
 
+// Battery telemetry is produced by the battery task and sent by the wifi task.
+static portMUX_TYPE g_telemetryMux = portMUX_INITIALIZER_UNLOCKED;
+static float g_battVoltage_V = 0.0f;
+static float g_battCurrent_A = 0.0f;
+static float g_battUsed_mAh = 0.0f;
+static bool g_battTelemetryPending = false;
+
+// RTC retained diagnostics (helps when the board keeps rebooting).
+RTC_DATA_ATTR static uint32_t g_bootCount = 0;
+
 // New mode: heading hold (triggered via web UI "M" button).
 static volatile bool g_headingHoldActive = false;
 static volatile float g_headingTarget_deg = 0.0f;
-
-// UI sync for M-Mode state (AsyncWebServer runs on a different task/core).
-static volatile bool g_autoModeUiSyncPending = false;
-static volatile bool g_autoModeUiDesired = false;
 
 static inline float wrap360_local(float deg)
 {
@@ -104,6 +115,67 @@ static void setHeading(float heading_deg)
 static void cancelHeadingHold()
 {
   g_headingHoldActive = false;
+}
+
+static inline void queueLatestSetpointsSnapshot()
+{
+  if (g_controlQueue == nullptr)
+  {
+    return;
+  }
+  ControlSetpoints snap;
+  portENTER_CRITICAL(&g_setpointsMux);
+  snap = g_latestSetpoints;
+  portEXIT_CRITICAL(&g_setpointsMux);
+  xQueueOverwrite(g_controlQueue, &snap);
+}
+
+static inline const char *resetReasonToString(esp_reset_reason_t r)
+{
+  switch (r)
+  {
+  case ESP_RST_UNKNOWN:
+    return "UNKNOWN";
+  case ESP_RST_POWERON:
+    return "POWERON";
+  case ESP_RST_EXT:
+    return "EXT";
+  case ESP_RST_SW:
+    return "SW";
+  case ESP_RST_PANIC:
+    return "PANIC";
+  case ESP_RST_INT_WDT:
+    return "INT_WDT";
+  case ESP_RST_TASK_WDT:
+    return "TASK_WDT";
+  case ESP_RST_WDT:
+    return "WDT";
+  case ESP_RST_DEEPSLEEP:
+    return "DEEPSLEEP";
+  case ESP_RST_BROWNOUT:
+    return "BROWNOUT";
+  case ESP_RST_SDIO:
+    return "SDIO";
+  default:
+    return "(other)";
+  }
+}
+
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+  (void)xTask;
+  // Note: stack overflows often corrupt state; keep this minimal.
+  Serial.printf("[FREERTOS] Stack overflow in task: %s\n", pcTaskName ? pcTaskName : "(null)");
+  Serial.flush();
+  esp_restart();
+}
+
+extern "C" void vApplicationMallocFailedHook(void)
+{
+  Serial.println("[FREERTOS] Malloc failed");
+  Serial.printf("[HEAP] free=%u min=%u\n", (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+  Serial.flush();
+  esp_restart();
 }
 
 // **************************************************
@@ -147,31 +219,29 @@ void task_blink(void *parameter)
 
 void task_wifiManager(void *parameter)
 {
-  static uint32_t lastHeadingMs = 0;
+  static uint32_t lastDiagMs = 0;
 
   for (;;)
   {
-    // Cleanup websocket clients (Async server handles everything else)
-    networkPiloting.loop();
-
-    // If we force-exit M-Mode (e.g. sequence finished), sync UI state.
-    if (g_autoModeUiSyncPending)
-    {
-      const bool desired = g_autoModeUiDesired;
-      g_autoModeUiSyncPending = false;
-      networkPiloting.sendAutoMode(desired);
-    }
-
-    // Push current heading to the web UI at a modest rate.
     const uint32_t nowMs = millis();
-    if ((nowMs - lastHeadingMs) >= 200)
+
+    // Periodic diagnostics (helps identify stack/heap pressure leading to WDT/panic).
+    if ((nowMs - lastDiagMs) >= 5000)
     {
-      lastHeadingMs = nowMs;
-      const float yawDeg = g_yawMeasured_deg;
-      if (isfinite(yawDeg))
-      {
-        networkPiloting.sendHeading(yawDeg);
-      }
+      lastDiagMs = nowMs;
+      const uint32_t freeHeap = (uint32_t)esp_get_free_heap_size();
+      const uint32_t minHeap = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+      const uint32_t stMotor = (uint32_t)uxTaskGetStackHighWaterMark(taskH_motorManagement) * (uint32_t)sizeof(StackType_t);
+      const uint32_t stImu = (uint32_t)uxTaskGetStackHighWaterMark(taskH_imu) * (uint32_t)sizeof(StackType_t);
+      const uint32_t stWifi = (uint32_t)uxTaskGetStackHighWaterMark(taskH_wifi) * (uint32_t)sizeof(StackType_t);
+      const uint32_t stBat = (uint32_t)uxTaskGetStackHighWaterMark(taskH_batteryMonitor) * (uint32_t)sizeof(StackType_t);
+      Serial.printf("[DIAG] heap_free=%lu heap_min=%lu stackB motor=%lu imu=%lu wifi=%lu bat=%lu\n",
+                    (unsigned long)freeHeap,
+                    (unsigned long)minHeap,
+                    (unsigned long)stMotor,
+                    (unsigned long)stImu,
+                    (unsigned long)stWifi,
+                    (unsigned long)stBat);
     }
 
     vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -245,7 +315,7 @@ void task_imu(void *parameter)
       //               imu.getYaw_deg());
 
       // Mag, Gyro, Comp
-      //Serial.printf("%0.2f,%0.2f,%0.2f\n", heading_deg, imu.getYawGyro_deg(), imu.getYaw_deg());
+      // Serial.printf("%0.2f,%0.2f,%0.2f\n", heading_deg, imu.getYawGyro_deg(), imu.getYaw_deg());
     }
 
     imu.updateYawComplementaryFrom(gz, heading_deg);
@@ -308,6 +378,8 @@ void task_motorManagement(void *parameter)
       global_HeadingPid_IntegratorLimit_dps);
 
   bool lastHeadingHoldActive = false;
+  bool lastMotorsEnabled = false;
+  bool lastLiftEnabledWhileArmed = false;
 
   ControlSetpoints mySetPoint{0, 0, 0, false, false};
 
@@ -381,8 +453,18 @@ void task_motorManagement(void *parameter)
     }
 
     // Apply whatever values are in mySetPoint (last known setpoints)
-    // Enforce emergency override at MotorCtrl level as well.
-    motorCtrl.setMotorsEnabled(effectiveMotorsEnabled);
+    // Enforce emergency override at MotorCtrl level as well (edge-triggered to avoid spamming DShot).
+    if (effectiveMotorsEnabled != lastMotorsEnabled)
+    {
+      motorCtrl.setMotorsEnabled(effectiveMotorsEnabled);
+      lastMotorsEnabled = effectiveMotorsEnabled;
+
+      // When disarming, also clear lift-edge tracking.
+      if (!effectiveMotorsEnabled)
+      {
+        lastLiftEnabledWhileArmed = false;
+      }
+    }
 
     // Compute yaw rate setpoint from steering input.
     // `diffThrust` coming from the app is interpreted as yaw-rate command in percent [-100..100].
@@ -421,24 +503,18 @@ void task_motorManagement(void *parameter)
     {
       cancelHeadingHold();
 
+      portENTER_CRITICAL(&g_setpointsMux);
       g_latestSetpoints.motorsEnabled = false;
       g_latestSetpoints.liftEnabled = false;
       g_latestSetpoints.lift = 0.0f;
       g_latestSetpoints.thrust = 0.0f;
       g_latestSetpoints.diffThrust = 0.0f;
-      if (g_controlQueue != nullptr)
-      {
-        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-      }
+      portEXIT_CRITICAL(&g_setpointsMux);
+
+      queueLatestSetpointsSnapshot();
 
       motorCtrl.setMotorsEnabled(false);
-      mixer->setLift(0.0f);
-      mixer->setDiffThrust(0.0f);
-      mixer->setThrust(0.0f);
-
-      // Sync UI to OFF (best-effort)
-      g_autoModeUiDesired = false;
-      g_autoModeUiSyncPending = true;
+      mixer->setLiftThrustDiff(0.0f, 0.0f, 0.0f);
 
       Serial.println("[AUTO] sequence exit -> motors OFF, M-Mode OFF");
     }
@@ -455,32 +531,36 @@ void task_motorManagement(void *parameter)
       diffCmd = 0.0f;
     }
 
+    // Apply mixer outputs once per loop to reduce DShot/RMT load.
+    float liftCmd = 0.0f;
+    float thrustCmd = 0.0f;
+    float diffCmdToMixer = 0.0f;
+
     if (!effectiveMotorsEnabled)
     {
       // Keep the selected lift setpoint latched even while disarmed,
       // so arming immediately applies the preselected lift percentage.
-      mixer->setLift(appliedSetpoints.liftEnabled ? appliedSetpoints.lift : 0.0f);
-      mixer->setDiffThrust(0.0f);
-      mixer->setThrust(0.0f);
+      liftCmd = appliedSetpoints.liftEnabled ? appliedSetpoints.lift : 0.0f;
+      thrustCmd = 0.0f;
+      diffCmdToMixer = 0.0f;
     }
     else
     {
       // Lift OFF only affects the two front motors.
-      if (!appliedSetpoints.liftEnabled)
+      const bool liftEnabled = appliedSetpoints.liftEnabled;
+      if (!liftEnabled && lastLiftEnabledWhileArmed)
       {
-        // Hard-stop lift motors and keep mixer lift at 0.
+        // Falling edge: hard-stop lift motors immediately.
         motorCtrl.applyLiftOff();
-        mixer->setLift(0.0f);
       }
-      else
-      {
-        mixer->setLift(appliedSetpoints.lift);
-      }
+      lastLiftEnabledWhileArmed = liftEnabled;
 
-      // Thrust + yaw-rate control should still work even if lift is OFF.
-      mixer->setDiffThrust(diffCmd);
-      mixer->setThrust(appliedSetpoints.thrust);
+      liftCmd = liftEnabled ? appliedSetpoints.lift : 0.0f;
+      thrustCmd = appliedSetpoints.thrust;
+      diffCmdToMixer = diffCmd;
     }
+
+    mixer->setLiftThrustDiff(liftCmd, thrustCmd, diffCmdToMixer);
 
     vTaskDelayUntil(&lastWake, controlPeriodTicks);
   }
@@ -488,40 +568,39 @@ void task_motorManagement(void *parameter)
 
 void task_irSensors(void *parameter)
 {
-    // Order: index0=BM, index1=FL, index2=FR to match IRSensors detectLine mapping.
-    const int kAdcPins[] = {(int)global_PIN_IR_SENSOR_BM, (int)global_PIN_IR_SENSOR_FL, (int)global_PIN_IR_SENSOR_FR};
-  uint8_t latestSamples[3];                  // Holds most recent 8-bit readings
-  uint32_t latestTimestamps[3];              // Holds most recent timestamps in microseconds
+  // Order: index0=BM, index1=FL, index2=FR to match IRSensors detectLine mapping.
+  const int kAdcPins[] = {(int)global_PIN_IR_SENSOR_BM, (int)global_PIN_IR_SENSOR_FL, (int)global_PIN_IR_SENSOR_FR};
+  uint8_t latestSamples[3];     // Holds most recent 8-bit readings
+  uint32_t latestTimestamps[3]; // Holds most recent timestamps in microseconds
 
-    // Low resolution for maximum throughput; 8-bit keeps conversion short.
-    analogReadResolution(8);
+  // Low resolution for maximum throughput; 8-bit keeps conversion short.
+  analogReadResolution(8);
 
-    // Read IR sensors and save to internal state
-    for (;;)
-    {
-        // Tight polling loop; avoid extra work inside the hot path.
-        // The charging of the ADC Capacitor takes a lot longer than the digitisation itself.
-        // So we first chrge and then set the timestamps right after reading to be as accurate as possible.
-        latestSamples[0] = analogRead(kAdcPins[0]);
-        latestTimestamps[0] = micros();
+  // Read IR sensors and save to internal state
+  for (;;)
+  {
+    // Tight polling loop; avoid extra work inside the hot path.
+    // The charging of the ADC Capacitor takes a lot longer than the digitisation itself.
+    // So we first chrge and then set the timestamps right after reading to be as accurate as possible.
+    latestSamples[0] = analogRead(kAdcPins[0]);
+    latestTimestamps[0] = micros();
 
-        latestSamples[1] = analogRead(kAdcPins[1]);
-        latestTimestamps[1] = micros();
+    latestSamples[1] = analogRead(kAdcPins[1]);
+    latestTimestamps[1] = micros();
 
-        latestSamples[2] = analogRead(kAdcPins[2]);
-        latestTimestamps[2] = micros();
+    latestSamples[2] = analogRead(kAdcPins[2]);
+    latestTimestamps[2] = micros();
 
-        // Serial.printf("[task_irSensors] BM: %d (%lu us) | FL: %d (%lu us) | FR: %d (%lu us)\n",
-        //           latestSamples[0], (unsigned long)latestTimestamps[0],
-        //           latestSamples[1], (unsigned long)latestTimestamps[1],
-        //           latestSamples[2], (unsigned long)latestTimestamps[2]);
+    // Serial.printf("[task_irSensors] BM: %d (%lu us) | FL: %d (%lu us) | FR: %d (%lu us)\n",
+    //           latestSamples[0], (unsigned long)latestTimestamps[0],
+    //           latestSamples[1], (unsigned long)latestTimestamps[1],
+    //           latestSamples[2], (unsigned long)latestTimestamps[2]);
 
-        irSensors.enqueueSample(latestSamples, latestTimestamps);
+    irSensors.enqueueSample(latestSamples, latestTimestamps);
 
-        vTaskDelay(5 / portTICK_PERIOD_MS);
-    }
+    vTaskDelay(5 / portTICK_PERIOD_MS);
+  }
 }
-
 
 void task_calcIrSensors(void *parameter)
 {
@@ -536,7 +615,7 @@ void task_calcIrSensors(void *parameter)
 
     const float alpha = irSensors.getAlphaToLine();
     const float vPerp = irSensors.getVelocityPerpToLine();
-    Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
+    // Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
 
     // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
     vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -558,14 +637,19 @@ void task_batteryMonitor(void *parameter)
     const float a = batteryMonitor.getCurrent();
     const float mah = batteryMonitor.getMAH();
 
-    //Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
-                //   xPortGetCoreID(),
-                //   v,
-                //   a,
-                //   mah);
+    // Serial.printf("[BAT] core=%d V=%.2fV I=%.2fA used=%.0fmAh\n",
+    //    xPortGetCoreID(),
+    //    v,
+    //    a,
+    //    mah);
 
-    // Push latest battery telemetry to all connected web clients.
-    networkPiloting.sendTelemetry(v, a, mah);
+    // Store latest battery telemetry; wifi task will send it.
+    portENTER_CRITICAL(&g_telemetryMux);
+    g_battVoltage_V = v;
+    g_battCurrent_A = a;
+    g_battUsed_mAh = mah;
+    g_battTelemetryPending = true;
+    portEXIT_CRITICAL(&g_telemetryMux);
 
     // Low battery indicator: LED stays solid ON below the configured warning threshold.
     g_lowBatteryLedSolidOn = (v > 0.0f) && (v < global_BatteryVoltageLow_WarningLow);
@@ -591,18 +675,16 @@ void task_batteryMonitor(void *parameter)
     {
       cutoffLatched = true;
 
+      portENTER_CRITICAL(&g_setpointsMux);
       g_latestSetpoints.motorsEnabled = false;
       g_latestSetpoints.liftEnabled = false;
       g_latestSetpoints.lift = 0.0f;
       g_latestSetpoints.thrust = 0.0f;
       g_latestSetpoints.diffThrust = 0.0f;
+      portEXIT_CRITICAL(&g_setpointsMux);
 
-      if (g_controlQueue != nullptr)
-      {
-        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-      }
+      queueLatestSetpointsSnapshot();
 
-      motorCtrl.setMotorsEnabled(false);
       Serial.println("[BAT] Low voltage cutoff: motors disabled");
     }
 
@@ -623,6 +705,11 @@ void setup()
 {
   // Start Serial for debug output
   Serial.begin(115200);
+
+  // Print reset reason early to distinguish WDT/brownout/panic.
+  const esp_reset_reason_t rr = esp_reset_reason();
+  g_bootCount++;
+  Serial.printf("[BOOT] boots=%lu reset_reason=%d (%s)\n", (unsigned long)g_bootCount, (int)rr, resetReasonToString(rr));
 
   // Define LED Pin, this is probably a special case, since most other pins are defined in the libary constructors
   pinMode(LED_PIN, OUTPUT);
@@ -690,12 +777,11 @@ void setup()
 
   networkPiloting.setLiftCallback([](float liftPercent)
                                   {
+                                    portENTER_CRITICAL(&g_setpointsMux);
                                     g_latestSetpoints.lift = liftPercent;
                                     g_latestSetpoints.liftEnabled = (liftPercent > 0.0f);
-                                    if (g_controlQueue != nullptr)
-                                    {
-                                      xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-                                    }
+                                    portEXIT_CRITICAL(&g_setpointsMux);
+                                    queueLatestSetpointsSnapshot();
                                     // Serial.printf("Lift=%.1f%%\n", liftPercent);
                                   });
 
@@ -703,26 +789,25 @@ void setup()
                                     {
                                       // Scale thrust so the web UI's full deflection (100%) maps to a configurable max thrust.
                                       const float scaled = thrustPercent * (global_WebThrustPresetPercent / 100.0f);
+                                      portENTER_CRITICAL(&g_setpointsMux);
                                       g_latestSetpoints.thrust = constrain(scaled, -100.0f, 100.0f);
-                                      if (g_controlQueue != nullptr)
-                                      {
-                                        xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-                                      }
+                                      portEXIT_CRITICAL(&g_setpointsMux);
+                                      queueLatestSetpointsSnapshot();
                                       // Serial.printf("Thrust=%.1f%%\n", thrustPercent);
                                     });
 
   networkPiloting.setSteeringCallback([](float steeringPercent)
                                       {
+                                        portENTER_CRITICAL(&g_setpointsMux);
                                         g_latestSetpoints.diffThrust = steeringPercent;
-                                        if (g_controlQueue != nullptr)
-                                        {
-                                          xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-                                        }
+                                        portEXIT_CRITICAL(&g_setpointsMux);
+                                        queueLatestSetpointsSnapshot();
                                         // Serial.printf("Steering=%.1f%%\n", steeringPercent);
                                       });
 
   networkPiloting.setArmCallback([](bool enabled)
                                  {
+                                   portENTER_CRITICAL(&g_setpointsMux);
                                    g_latestSetpoints.motorsEnabled = enabled;
                                    if (!enabled)
                                    {
@@ -731,10 +816,8 @@ void setup()
                                      g_latestSetpoints.diffThrust = 0.0f;
                                      g_latestSetpoints.liftEnabled = false;
                                    }
-                                   if (g_controlQueue != nullptr)
-                                   {
-                                     xQueueOverwrite(g_controlQueue, &g_latestSetpoints);
-                                   }
+                                   portEXIT_CRITICAL(&g_setpointsMux);
+                                   queueLatestSetpointsSnapshot();
                                    // Serial.printf("Motors %s\n", enabled ? "ON" : "OFF");
                                  });
 
@@ -752,6 +835,96 @@ void setup()
       autonomousSequence.requestStop();
       Serial.println("[AUTO] autoMode OFF -> abort sequence");
     } });
+
+  // Provide /debug endpoint JSON (useful when no serial monitor is attached).
+  networkPiloting.setDebugProvider([](char *out, size_t outSize) -> size_t
+                                   {
+                                    if (out == nullptr || outSize == 0)
+                                    {
+                                      return 0;
+                                    }
+
+                                    ControlSetpoints sp;
+                                    portENTER_CRITICAL(&g_setpointsMux);
+                                    sp = g_latestSetpoints;
+                                    portEXIT_CRITICAL(&g_setpointsMux);
+
+                                    float v = 0.0f, a = 0.0f, mah = 0.0f;
+                                    portENTER_CRITICAL(&g_telemetryMux);
+                                    v = g_battVoltage_V;
+                                    a = g_battCurrent_A;
+                                    mah = g_battUsed_mAh;
+                                    portEXIT_CRITICAL(&g_telemetryMux);
+
+                                    const float yawDeg = g_yawMeasured_deg;
+                                    const bool autoMode = autonomousSequence.isActive();
+                                    const bool headingHold = g_headingHoldActive;
+
+                                    const esp_reset_reason_t rr = esp_reset_reason();
+                                    const uint32_t freeHeap = (uint32_t)esp_get_free_heap_size();
+                                    const uint32_t minHeap = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+
+                                    auto stackBytes = [](TaskHandle_t h) -> uint32_t
+                                    {
+                                      if (h == nullptr)
+                                      {
+                                        return 0;
+                                      }
+                                      return (uint32_t)uxTaskGetStackHighWaterMark(h) * (uint32_t)sizeof(StackType_t);
+                                    };
+
+                                    const uint32_t stMotor = stackBytes(taskH_motorManagement);
+                                    const uint32_t stImu = stackBytes(taskH_imu);
+                                    const uint32_t stWifi = stackBytes(taskH_wifi);
+                                    const uint32_t stBat = stackBytes(taskH_batteryMonitor);
+
+                                    const int n = snprintf(
+                                        out,
+                                        outSize,
+                                        "{"
+                                        "\"ok\":true,"
+                                        "\"boots\":%lu,"
+                                        "\"reset_reason\":{\"code\":%d,\"text\":\"%s\"},"
+                                        "\"heap\":{\"free\":%lu,\"min\":%lu},"
+                                        "\"stackB\":{\"motor\":%lu,\"imu\":%lu,\"wifi\":%lu,\"bat\":%lu},"
+                                        "\"yaw\":{\"deg\":%.1f},"
+                                        "\"mode\":{\"autoMode\":%s,\"headingHold\":%s},"
+                                        "\"battery\":{\"V\":%.2f,\"A\":%.2f,\"mAh\":%.0f,\"cutoff\":%s},"
+                                        "\"setpoints\":{\"lift\":%.1f,\"thrust\":%.1f,\"diff\":%.1f,\"motors\":%s,\"liftEnabled\":%s}"
+                                        "}",
+                                        (unsigned long)g_bootCount,
+                                        (int)rr,
+                                        resetReasonToString(rr),
+                                        (unsigned long)freeHeap,
+                                        (unsigned long)minHeap,
+                                        (unsigned long)stMotor,
+                                        (unsigned long)stImu,
+                                        (unsigned long)stWifi,
+                                        (unsigned long)stBat,
+                                        (double)yawDeg,
+                                        autoMode ? "true" : "false",
+                                        headingHold ? "true" : "false",
+                                        (double)v,
+                                        (double)a,
+                                        (double)mah,
+                                        g_lowBatteryMotorCutoff ? "true" : "false",
+                                        (double)sp.lift,
+                                        (double)sp.thrust,
+                                        (double)sp.diffThrust,
+                                        sp.motorsEnabled ? "true" : "false",
+                                        sp.liftEnabled ? "true" : "false");
+
+                                    if (n <= 0)
+                                    {
+                                      out[0] = '\0';
+                                      return 0;
+                                    }
+                                    if ((size_t)n >= outSize)
+                                    {
+                                      out[outSize - 1] = '\0';
+                                      return outSize - 1;
+                                    }
+                                    return (size_t)n; });
 
   networkPiloting.begin();
 
@@ -809,15 +982,15 @@ void setup()
       &taskH_irSensors, // pass pointer to IR-Sensor function
       1);
 
-    // IR Sensors Calculation Task
-    xTaskCreatePinnedToCore(
-        &task_calcIrSensors,
-        "task_calcIrSensors",
-        4096, // stack size, needs to be adjusted when code is written
-        NULL,
-        1,
-        &taskH_calcIrSensors,
-        1);
+  // IR Sensors Calculation Task
+  xTaskCreatePinnedToCore(
+      &task_calcIrSensors,
+      "task_calcIrSensors",
+      4096, // stack size, needs to be adjusted when code is written
+      NULL,
+      1,
+      &taskH_calcIrSensors,
+      1);
 
   // Battery Monitor Task
   xTaskCreatePinnedToCore(
