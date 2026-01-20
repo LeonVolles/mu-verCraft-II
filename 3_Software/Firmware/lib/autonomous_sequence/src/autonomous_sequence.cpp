@@ -208,6 +208,12 @@ void AutonomousSequence::update(uint32_t nowMs,
 
         ... repeat until motors are turned of, or M-button is deactivated ...
     */
+
+    // This is to compensate a slight right drift of the hovercraft, to cancel out sideways drift from before
+    // This is applied to all "curves"
+    float driftAngleDeg_firstSector = 57.0f; // this value neeeds adjustment depending on speed, but this is for later
+    float driftAngleDeg_secondSector = 7.5f; // this is smaller, cause the creaft is slower
+
     switch (state_)
     {
     case State::Calibrating:
@@ -250,14 +256,14 @@ void AutonomousSequence::update(uint32_t nowMs,
         break;
 
     case State::StartBlind:
-        // 1) [0°/blind]: hold direction "blind" for 1.0s with thrust 15% to surpass the start line.
+        // 1) [0°/blind]: hold direction "blind" for 1.0s with thrust 30% to surpass the start line.
         Serial.println("1.) StartBlind, aveaged heading: " + String(startHeadingDeg_));
         overrideThrust_ = true;
-        thrustOverridePercent_ = 15.0f;
+        thrustOverridePercent_ = 30.0f;
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(startHeadingDeg_);
 
-        // Drive blind for 1s, then switch to DriveStraight_SecondSector to wait for the first line event that starts the first -90° curve.
+        // Drive blind for 1.0s, then switch to DriveStraight_SecondSector to wait for the first line event that starts the first -90° curve.
         if (elapsedMs >= 1000)
         {
             // Because we did not arrive at the line triggering the first curve, we give to DriveStraight_SecondSector so we continue straight until the first line event that starts the first -90° curve.
@@ -304,10 +310,10 @@ void AutonomousSequence::update(uint32_t nowMs,
             const float headingAtLine = headingAtLine_deg;
             // Line event -> end of straight segment, next segment is the first -90° sector.
 
-            // newHeadingSetpoint = currentHeading - alpha - 90deg
-            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f);
-            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg" +
-                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90");
+            // newHeadingSetpoint = currentHeading - alpha - 90deg - abs(driftAngleDeg_firstSector)
+            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f - abs(driftAngleDeg_firstSector));
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg - abs(driftAngleDeg_firstSector)" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90 - " + String(abs(driftAngleDeg_firstSector)));
             Serial.println("   Transition to DriveCurveMinus90_FirstSector");
             enterState(State::DriveCurveMinus90_FirstSector, nowMs);
         }
@@ -327,10 +333,10 @@ void AutonomousSequence::update(uint32_t nowMs,
             const float alpha = lineAlpha_deg;
             const float headingAtLine = headingAtLine_deg;
 
-            // newHeadingSetpoint = currentHeading - alpha - 90deg
-            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f);
-            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg" +
-                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90");
+            // newHeadingSetpoint = currentHeading - alpha - 90deg - abs(driftAngleDeg_secondSector)
+            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f - abs(driftAngleDeg_secondSector));
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg - abs(driftAngleDeg_secondSector)" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90 - " + String(abs(driftAngleDeg_secondSector)));
             Serial.println("   Transition to DriveCurveMinus90_SecondSector");
             enterState(State::DriveCurveMinus90_SecondSector, nowMs);
         }

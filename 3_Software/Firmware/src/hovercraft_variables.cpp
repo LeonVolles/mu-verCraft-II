@@ -128,10 +128,10 @@ const float global_YawRatePid_IntegratorLimit = 50.0f;
 // *************************************************
 // Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
 // Start with conservative gains; tune on hardware.
-// Ziegler nicosl: Ku = 50, Pu = 1,5s => Kp 0,6*Ku=30, Ki=1.2*Ku/Pu=40, Kd=0.075*Ku*Pu=5
-const float global_HeadingPid_Kp = 25.0f; // 6
-const float global_HeadingPid_Ki = 1.1f;  // 0
-const float global_HeadingPid_Kd = 0.3f;  // 0.3
+// Ziegler nicosl: Ku = 50, Pu = 0.5s => Kp 0,6*Ku=30, Ki=1.2*Ku/Pu=40, Kd=0.075*Ku*Pu=5
+const float global_HeadingPid_Kp = 30.0f; // 6
+const float global_HeadingPid_Ki = 40.0f; // 0
+const float global_HeadingPid_Kd = 5.0f;  // 0.3
 
 // Limit yaw-rate request from heading-hold to keep it smooth.
 const float global_HeadingPid_OutputLimit_dps = 100.0f;
