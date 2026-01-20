@@ -125,9 +125,9 @@ void IRSensors::processQueue(float threshold, float hysteresis)
 
 void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], float threshold, float hysteresis)
 {
-    (void)hysteresis;
+    float lower = (threshold > hysteresis) ? (threshold - hysteresis) : 0.0f;
 
-    // Rising-edge detection per sensor using previous sample + simple re-arm.
+    // Rising-edge detection per sensor using previous sample + hysteresis re-arm.
     for (int s = 0; s < 3; ++s)
     {
         uint8_t v = values[s];
@@ -136,13 +136,13 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
         {
             _prevValue[s] = v;
             _prevInit[s] = true;
-            // Set armed if we start below the threshold.
-            _armed[s] = (v < threshold);
+            // Set armed if we start below the lower band.
+            _armed[s] = (v <= lower);
             continue;
         }
 
-        // Re-arm when below threshold.
-        if (v < threshold)
+        // Re-arm when below the lower threshold band.
+        if (v <= lower)
         {
             _armed[s] = true;
         }
