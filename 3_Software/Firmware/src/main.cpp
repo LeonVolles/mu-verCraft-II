@@ -415,12 +415,14 @@ void task_motorManagement(void *parameter)
 
   ControlSetpoints mySetPoint{0, 0, 0, false, false};
 
-  TickType_t lastWake = xTaskGetTickCount();
-  const uint32_t controlPeriodMs = (uint32_t)(1000.0f / global_ControlLoopRate_Hz);
-  TickType_t controlPeriodTicks = pdMS_TO_TICKS(controlPeriodMs);
-  if (controlPeriodTicks == 0)
-    controlPeriodTicks = 1;
-  uint32_t lastUpdateUs = micros();
+  // Control loop timing
+  // Use microsecond scheduling to support fractional millisecond periods
+  // (e.g. 400 Hz -> 2500 us). vTaskDelayUntil() works in ticks and would
+  // truncate to whole milliseconds.
+  const float controlRateHz = fmaxf(1.0f, global_ControlLoopRate_Hz);
+  const uint32_t controlPeriodUs = (uint32_t)lroundf(1e6f / controlRateHz);
+  uint32_t nextWakeUs = micros();
+  uint32_t lastUpdateUs = nextWakeUs;
 
   for (;;)
   {
@@ -616,7 +618,29 @@ void task_motorManagement(void *parameter)
 
     mixer->setLiftThrustDiff(liftCmd, thrustCmd, diffCmdToMixer);
 
-    vTaskDelayUntil(&lastWake, controlPeriodTicks);
+    // Periodic scheduling with sub-millisecond resolution.
+    nextWakeUs += controlPeriodUs;
+    int32_t remainingUs = (int32_t)(nextWakeUs - micros());
+
+    // If we're far behind (e.g. due to WiFi spikes), resync to avoid long catch-up.
+    if (remainingUs < -(int32_t)(controlPeriodUs))
+    {
+      nextWakeUs = micros();
+      remainingUs = (int32_t)controlPeriodUs;
+    }
+
+    // Coarse sleep in whole milliseconds.
+    if (remainingUs > 1500)
+    {
+      vTaskDelay(pdMS_TO_TICKS((uint32_t)(remainingUs / 1000)));
+    }
+
+    // Fine sleep for the last < ~1ms.
+    remainingUs = (int32_t)(nextWakeUs - micros());
+    if (remainingUs > 0)
+    {
+      delayMicroseconds((uint32_t)remainingUs);
+    }
   }
 }
 
