@@ -125,12 +125,9 @@ void IRSensors::processQueue(float threshold, float hysteresis)
 
 void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], float threshold, float hysteresis)
 {
-    float upper = threshold + hysteresis;
-    float lower = (threshold > hysteresis) ? (threshold - hysteresis) : 0.0f;
+    (void)hysteresis;
 
-    const float timeout_s = global_IRSensor_Timeout_us * 1e-6f;
-
-    // Rising-edge detection per sensor using previous sample + hysteresis re-arm.
+    // Rising-edge detection per sensor using previous sample + simple re-arm.
     for (int s = 0; s < 3; ++s)
     {
         uint8_t v = values[s];
@@ -139,21 +136,18 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
         {
             _prevValue[s] = v;
             _prevInit[s] = true;
-            // Set armed if we start below the lower band
-            if (v <= lower)
-            {
-                _armed[s] = true;
-            }
+            // Set armed if we start below the threshold.
+            _armed[s] = (v < threshold);
             continue;
         }
 
-        // Re-arm when sufficiently below lower threshold band.
-        if (v <= lower)
+        // Re-arm when below threshold.
+        if (v < threshold)
         {
             _armed[s] = true;
         }
 
-        bool rising = _armed[s] && (_prevValue[s] < threshold) && (v >= upper);
+        bool rising = _armed[s] && (_prevValue[s] < threshold) && (v >= threshold);
         if (rising)
         {
             uint32_t ts = t_us[s];
@@ -180,44 +174,6 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
         }
 
         _prevValue[s] = v;
-    }
-
-    // Timeout: if we have partial triggers, reset if oldest timestamp is too old.
-    if ((_t1_valid || _t2_valid || _t3_valid))
-    {
-        uint32_t t_min = UINT32_MAX;
-        uint32_t t_max = 0;
-        if (_t1_valid)
-        {
-            t_min = (_t1_us < t_min) ? _t1_us : t_min;
-            t_max = (_t1_us > t_max) ? _t1_us : t_max;
-        }
-        if (_t2_valid)
-        {
-            t_min = (_t2_us < t_min) ? _t2_us : t_min;
-            t_max = (_t2_us > t_max) ? _t2_us : t_max;
-        }
-        if (_t3_valid)
-        {
-            t_min = (_t3_us < t_min) ? _t3_us : t_min;
-            t_max = (_t3_us > t_max) ? _t3_us : t_max;
-        }
-
-        float span_s = ((float)(t_max - t_min)) * 1e-6f;
-        if (span_s > timeout_s)
-        {
-            _t1_valid = _t2_valid = _t3_valid = false;
-        }
-
-        // Also clear stale timestamps if they are too old versus current sample time.
-        uint32_t now_us = (t_us[0] > t_us[1]) ? t_us[0] : t_us[1];
-        now_us = (now_us > t_us[2]) ? now_us : t_us[2];
-        if ((_t1_valid && (now_us - _t1_us) > (uint32_t)global_IRSensor_Timeout_us) ||
-            (_t2_valid && (now_us - _t2_us) > (uint32_t)global_IRSensor_Timeout_us) ||
-            (_t3_valid && (now_us - _t3_us) > (uint32_t)global_IRSensor_Timeout_us))
-        {
-            _t1_valid = _t2_valid = _t3_valid = false;
-        }
     }
 
     // Once all three have toggled, compute alpha and speed using isosceles geometry:
