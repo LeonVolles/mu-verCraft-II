@@ -59,7 +59,7 @@ bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor com
 // *************************************************
 // Wifi SSID, PW, IP addresses
 // *************************************************
-const char global_WifiApSsid[] = "µ-verCraft-II AP-LG";
+const char global_WifiApSsid[] = "µ-verCraft-II AP";
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 // Note: WebUi/Website: 192.168.4.1
 const uint16_t global_WebServerPort = 80;
@@ -73,14 +73,16 @@ const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter 
 // Magnetometer calibration (hard-iron offsets)
 // *************************************************
 // Replace these values with the output of MagCalibrator tool found in 3_Software of this git repo
-// Craft LG
+
+// // Craft LG
 // const int16_t global_MagOffsetX = -734;
 // const int16_t global_MagOffsetY = -22;
 // const int16_t global_MagOffsetZ = -517;
 
-const int16_t global_MagOffsetX = -602; // Avg of -602, -613, -590
-const int16_t global_MagOffsetY = 399;  // Avg of 389, 373, 434
-const int16_t global_MagOffsetZ = -438; // Avg of -510, -202, -602
+//Craft ENSMM
+const int16_t global_MagOffsetX = -619;
+const int16_t global_MagOffsetY = 989;
+const int16_t global_MagOffsetZ = 44;
 
 // *************************************************
 // Control loop constants (example, if you enable them)
@@ -141,6 +143,6 @@ const float global_IRSensorDistance_b_meters = 0.06f; // triangle has base of le
 // Thresholds, limits, etc.
 // *************************************************
 // IR-line sensor thresholds
-const float global_IRSensor_Threshold = 150.0f;      // black line over 150
-const float global_IRSensor_Hysteresis = 10.0f;      // hysteresis for line detection
-const float global_IRSensor_Timeout_us = 5000000.0f; // timeout in microseconds for incomplete crossings (5 seconds)
+const float global_IRSensor_Threshold = 150.0f; // black line over 150
+const float global_IRSensor_Hysteresis = 5.0f; // hysteresis for line detection
+const float global_IRSensor_Timeout_us = 500000.0f; // timeout in microseconds for incomplete crossings (0.3 seconds)

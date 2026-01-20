@@ -83,6 +83,7 @@ bool IRSensors::enqueueSample(const uint8_t values[3], const uint32_t t_us[3])
         s.v[i] = values[i];
         s.t[i] = t_us[i];
     }
+    //Serial.println("Enqueued sample");
     return xQueueSend(_sampleQueue, &s, 0) == pdPASS;
 }
 
@@ -111,20 +112,21 @@ void IRSensors::processQueue(float threshold, float hysteresis)
 {
     uint8_t values[3];
     uint32_t times[3];
+    // uint32_t processedCount = 0;
 
     // Keep consuming until queue is empty to avoid backlog when producer runs faster.
     while (dequeueSample(values, times, 0))
     {
         detectLine(values, times, threshold, hysteresis);
+        // processedCount++;
+        // Serial.println("Dequeued sample: " + String(processedCount));
     }
 }
 
 void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], float threshold, float hysteresis)
 {
-    float upper = threshold + hysteresis;
     float lower = (threshold > hysteresis) ? (threshold - hysteresis) : 0.0f;
-
-    const float timeout_s = global_IRSensor_Timeout_us * 1e-6f;
+    const uint32_t timeout_us = (uint32_t)global_IRSensor_Timeout_us;
 
     // Rising-edge detection per sensor using previous sample + hysteresis re-arm.
     for (int s = 0; s < 3; ++s)
@@ -135,21 +137,18 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
         {
             _prevValue[s] = v;
             _prevInit[s] = true;
-            // Set armed if we start below the lower band
-            if (v <= lower)
-            {
-                _armed[s] = true;
-            }
+            // Set armed if we start below the lower band.
+            _armed[s] = (v <= lower);
             continue;
         }
 
-        // Re-arm when sufficiently below lower threshold band.
+        // Re-arm when below the lower threshold band.
         if (v <= lower)
         {
             _armed[s] = true;
         }
 
-        bool rising = _armed[s] && (_prevValue[s] < threshold) && (v >= upper);
+        bool rising = _armed[s] && (_prevValue[s] < threshold) && (v >= threshold);
         if (rising)
         {
             uint32_t ts = t_us[s];
@@ -199,8 +198,7 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
             t_max = (_t3_us > t_max) ? _t3_us : t_max;
         }
 
-        float span_s = ((float)(t_max - t_min)) * 1e-6f;
-        if (span_s > timeout_s)
+        if ((t_max - t_min) > timeout_us)
         {
             _t1_valid = _t2_valid = _t3_valid = false;
         }
@@ -208,9 +206,9 @@ void IRSensors::detectLine(const uint8_t values[3], const uint32_t t_us[3], floa
         // Also clear stale timestamps if they are too old versus current sample time.
         uint32_t now_us = (t_us[0] > t_us[1]) ? t_us[0] : t_us[1];
         now_us = (now_us > t_us[2]) ? now_us : t_us[2];
-        if ((_t1_valid && (now_us - _t1_us) > (uint32_t)global_IRSensor_Timeout_us) ||
-            (_t2_valid && (now_us - _t2_us) > (uint32_t)global_IRSensor_Timeout_us) ||
-            (_t3_valid && (now_us - _t3_us) > (uint32_t)global_IRSensor_Timeout_us))
+        if ((_t1_valid && (now_us - _t1_us) > timeout_us) ||
+            (_t2_valid && (now_us - _t2_us) > timeout_us) ||
+            (_t3_valid && (now_us - _t3_us) > timeout_us))
         {
             _t1_valid = _t2_valid = _t3_valid = false;
         }
