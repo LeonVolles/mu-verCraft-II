@@ -3,84 +3,194 @@
 
 ### Purpose
 
-General idea: autonomous behavior is easiest to maintain as a **small state machine**. Each state defines “what the craft should do now” (e.g. hold a heading, apply a fixed thrust), and transitions to the next state are triggered by **conditions**. In this project, conditions are currently mostly **time-based** (elapsed milliseconds), but the same structure can be extended to **event-based triggers** such as IR line detections (see the IR sensors module).
+`autonomous_sequence` implements the autonomous competition behavior executed when “M-Mode” (Auto Mode) is enabled. It is implemented as a **small, deterministic state machine** that runs inside the motor/control task.
 
-Implements the time-based autonomous sequence executed when the website “M” button (Auto Mode) is enabled.
+High-level behavior:
 
-The sequencer is designed to run deterministically inside the motor/control task and can:
+- Calibrate an initial **start heading** by averaging the complementary-filter heading for 2 seconds.
+- Wait for motors to be armed.
+- Drive “blind” for a short time to pass the start line.
+- Then run an **event-driven loop** where each **IR line crossing event** recomputes the next heading setpoint.
+- Allow abort at any time (user toggles M off / stop request / motors disarm).
 
-- Calibrate a **start heading** by averaging the complementary-filter yaw heading over time.
-- Command a **heading target** via the existing heading-hold cascade (outer heading controller → inner yaw-rate PID).
-- Override user thrust while active.
-- Abort at any time when the user toggles M off.
+The line-driven pattern after the blind start is intended to approximate the sector pattern:
+
+- `-90°, -90°, 0°, 0°` (repeat)
 
 ### Integration (where it runs)
 
-- The web UI callback calls `AutonomousSequence::requestStart()` / `AutonomousSequence::requestStop()`.
-- The motor/control task calls `autonomousSequence.update(millis(), yawMeasured_deg, yawFresh, effectiveMotorsEnabled)` once per control tick.
-- Outputs are applied in the motor task:
-  - During `Calibrating` and `WaitingForArm`, the motor task forces lift/thrust/yaw to **0** for stability.
-  - During the thrust phases, thrust is overridden and yaw steering is disabled (`diffThrust = 0`), while heading-hold is enabled with the requested target.
-  - When the sequencer requests exit, the motor task forces **motors OFF** and syncs the UI Auto Mode state back to OFF.
+- The UI / mode logic triggers:
+  - `AutonomousSequence::requestStart()` when M-Mode is enabled.
+  - `AutonomousSequence::requestStop()` when M-Mode is disabled.
+- The motor/control task ticks it once per control loop via `AutonomousSequence::update(...)`.
+- The motor/control task applies outputs:
+  - If `overrideThrust()` is true, it uses `thrustOverride_percent()` instead of user thrust.
+  - If `wantsHeadingHold()` is true, it enables heading-hold using `headingTarget_deg()` as setpoint.
+  - If `consumeExitRequest()` returns true (one-shot), the caller should force motors off and leave M-Mode.
 
-### Sequence behavior (example)
+Important note: `headingTarget_deg()` is a **persistent setpoint**. The implementation intentionally does **not** reset it at the start of each tick; it must remain valid between line events.
 
-State machine (`AutonomousSequence::State`):
+### Public interface
 
-1. **Idle**
-  - Not running.
+Entry points:
 
-2. **Calibrating** (2.0 s)
-  - Goal: compute `startHeadingDeg_` using a circular mean of heading samples.
-  - Heading samples are accumulated only when `headingFresh == true`.
-  - Motors are held at zero by the motor task (safety/stability).
-  - After 2.0 s:
-    - If motors are already armed (`motorsEnabled==true`) → proceed to **HoldStart**.
-    - Else → proceed to **WaitingForArm**.
+- `requestStart()`
+  - Latches a start request; the next tick in `Idle` enters calibration.
+- `requestStop()`
+  - Latches a stop request; the next tick transitions to `ExitRequested` (if active).
+- `update(nowMs, heading_deg, headingFresh, motorsEnabled, lineEventFresh, lineAlpha_deg, lineVPerp_mps, headingAtLine_deg)`
+  - Advances the state machine and updates output commands.
 
-3. **WaitingForArm** (indefinite)
-  - Motors are held at zero by the motor task.
-  - When `motorsEnabled==true` → proceed to **HoldStart**.
+Observability helpers:
 
-4. **HoldStart** (1.0 s)
-  - Thrust override: **20%**.
-  - Heading target: `startHeading`.
+- `isActive()`, `state()`
+- `startHeading_deg()`
+- `lastLineAlpha_deg()`, `lastLineVelocityPerp_mps()` (latched on every `lineEventFresh`)
 
-5. **TurnMinus90** (1.0 s)
-  - Thrust override: **20%**.
-  - Heading target: `startHeading - 90°` (wrapped to 0..360).
-
-6. **TurnMinus180** (3.0 s)
-  - Thrust override: **20%**.
-  - Heading target: `startHeading - 180°` (wrapped to 0..360).
-
-7. **ExitRequested** (one tick)
-  - Latches a one-shot exit request and returns to **Idle**.
-  - Note: on the tick where exit is generated, `isActive()` may already be false (state returns to `Idle` in the same update), so consumers must rely on `consumeExitRequest()`.
-
-### Inputs and outputs
-
-#### Inputs (to `update()`)
+### Inputs (to `update()`)
 
 - `nowMs`: current `millis()`.
-- `heading_deg`: current yaw/heading estimate (expected 0..360).
-- `headingFresh`: whether the heading estimate is fresh/valid.
-- `motorsEnabled`: whether motors are currently armed/enabled.
+- `heading_deg`: current heading estimate (deg). Used mainly for calibration.
+- `headingFresh`: when true, the heading sample is accumulated during calibration.
+- `motorsEnabled`: whether motors are armed/enabled.
+- `lineEventFresh`: one-shot flag indicating a **new** line-crossing event this tick.
+- `lineAlpha_deg`: IR-derived line angle $\alpha$ (deg). Valid only when `lineEventFresh==true`.
+- `lineVPerp_mps`: IR-derived perpendicular speed (m/s). Currently only latched for debugging/telemetry.
+- `headingAtLine_deg`: heading snapshot taken when the IR module generated the line event.
 
-#### Outputs (polled by the motor task)
+Why `headingAtLine_deg` matters:
+
+- The setpoint recomputation uses the heading that corresponds to the same instant as the IR measurement.
+- The caller should ensure `lineAlpha_deg` and `headingAtLine_deg` are from the same event.
+
+### Outputs (polled by the caller)
 
 - Thrust override:
-  - `overrideThrust()` / `thrustOverride_percent()`
-- Heading command:
-  - `wantsHeadingHold()` / `headingTarget_deg()`
-- Exit / abort handshake:
-  - `consumeExitRequest()` (one-shot)
+  - `overrideThrust()`
+  - `thrustOverride_percent()`
+- Heading-hold command:
+  - `wantsHeadingHold()`
+  - `headingTarget_deg()`
+- Exit handshake:
+  - `consumeExitRequest()` returns true exactly once per exit request.
 
-### Safety and edge cases
+### State machine (current implementation)
 
-- Abort at any time: `requestStop()` causes an immediate exit request on the next `update()` tick.
-- If motors become disarmed during thrust phases (`HoldStart`, `TurnMinus90`, `TurnMinus180`), the sequencer triggers an exit request.
-- Heading wrap-around is handled via circular mean (sin/cos accumulation) and `wrap360()`.
+States are defined in `AutonomousSequence::State`.
+
+#### Idle
+
+- Not running.
+- A latched start request transitions to **Calibrating**.
+
+#### Calibrating (2.0 s)
+
+- Motors commanded to stop (thrust override = 0%, heading-hold disabled).
+- While `headingFresh==true`, the module accumulates heading samples.
+- After 2000 ms:
+  - Computes `startHeading` as a circular mean (sin/cos average).
+  - If motors are armed: sets `headingTarget = startHeading` and transitions to **StartBlind**.
+  - Else transitions to **WaitingForArm**.
+
+#### WaitingForArm (indefinite)
+
+- Motors commanded to stop (thrust override = 0%, heading-hold disabled).
+- When `motorsEnabled==true`: sets `headingTarget = startHeading` and transitions to **StartBlind**.
+
+#### StartBlind (1.0 s)
+
+Goal: pass the start line without relying on the IR line event.
+
+- Thrust override: **30%**
+- Heading-hold: enabled
+  - `headingTarget = startHeading`
+- After 1000 ms: transitions to **DriveStraight_SecondSector**.
+
+#### DriveStraight_SecondSector (event-driven)
+
+This state holds the current heading target and waits for a line event.
+
+- Thrust override: **10%**
+- Heading-hold: enabled
+  - `headingTarget = headingTarget` (keep previous)
+
+On `lineEventFresh==true`:
+
+- Computes next heading setpoint for the first “-90° curve sector” using:
+
+$$\text{headingTarget} = \text{wrap360}(\text{headingAtLine} - \alpha - 90^\circ - |\text{driftFirst}|)$$
+
+where the current hard-coded drift compensation is:
+
+- `driftFirst = 57.0°`
+
+Then transitions to **DriveCurveMinus90_FirstSector**.
+
+#### DriveCurveMinus90_FirstSector (event-driven)
+
+- Thrust override: **10%**
+- Heading-hold: enabled
+- Waits for the next line event.
+
+On `lineEventFresh==true`:
+
+$$\text{headingTarget} = \text{wrap360}(\text{headingAtLine} - \alpha - 90^\circ - |\text{driftSecond}|)$$
+
+where the current hard-coded drift compensation is:
+
+- `driftSecond = 7.5°`
+
+Then transitions to **DriveCurveMinus90_SecondSector**.
+
+#### DriveCurveMinus90_SecondSector (event-driven)
+
+- Thrust override: **10%**
+- Heading-hold: enabled
+- Waits for the next line event.
+
+On `lineEventFresh==true` (end of “-90° segment”):
+
+$$\text{headingTarget} = \text{wrap360}(\text{headingAtLine} - \alpha)$$
+
+Then transitions to **DriveStraight_FirstSector**.
+
+#### DriveStraight_FirstSector (event-driven)
+
+- Thrust override: **10%**
+- Heading-hold: enabled
+- Waits for the next line event.
+
+On `lineEventFresh==true`:
+
+$$\text{headingTarget} = \text{wrap360}(\text{headingAtLine} - \alpha)$$
+
+Then transitions back to **DriveStraight_SecondSector**.
+
+#### Loop summary
+
+After the blind start, the loop is:
+
+- `DriveStraight_SecondSector`
+  → (line) `DriveCurveMinus90_FirstSector`
+  → (line) `DriveCurveMinus90_SecondSector`
+  → (line) `DriveStraight_FirstSector`
+  → (line) `DriveStraight_SecondSector` (repeat)
+
+### Stop/abort behavior and safety
+
+- `requestStop()` can be called at any time.
+  - On the next tick, if the sequence is active, it transitions to **ExitRequested**.
+- If motors are disarmed while the sequencer is in any “motion” state (`StartBlind`, the straight states, or the curve states), it transitions to **ExitRequested**.
+- **ExitRequested** is a one-tick state:
+  - Commands thrust override 0% and disables heading-hold.
+  - Latches an exit request (`consumeExitRequest()` will return true once).
+  - Immediately returns to `Idle` in the same tick.
+
+### Implementation notes / gotchas
+
+- Angle wrap-around: all computed headings are wrapped into $[0,360)$ via `wrap360()`.
+- Calibration uses a circular mean (sin/cos accumulation) to avoid errors near 0/360.
+- Debug prints: the implementation currently emits `Serial.println(...)` messages on transitions and line events.
 
 ### Files
 

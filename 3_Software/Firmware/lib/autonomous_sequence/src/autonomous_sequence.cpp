@@ -279,7 +279,8 @@ void AutonomousSequence::update(uint32_t nowMs,
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(headingTargetDeg_);
 
-        // When arriving at a line, we set the setpoint to "driving straight 0° second sector" and give to DriveStraight_SecondSector
+        // When arriving at a line, we set the setpoint to "driving straight 0° second sector"
+        //  and give to DriveStraight_SecondSector
         if (lineEventFresh)
         {
             // Line event -> end of this straight sector.
@@ -326,7 +327,8 @@ void AutonomousSequence::update(uint32_t nowMs,
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(headingTargetDeg_);
 
-        // When arriving at a line, we set the setpoint to "turning -90° second sector" and give to DriveCurveMinus90_SecondSector
+        // When arriving at a line, we set the setpoint to "turning -90° second sector"
+        //  and give to DriveCurveMinus90_SecondSector
         if (lineEventFresh)
         {
             // Line event -> end of first -90° curve sector.
