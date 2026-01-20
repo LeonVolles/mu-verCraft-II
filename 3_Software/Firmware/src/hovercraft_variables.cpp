@@ -44,45 +44,47 @@ const uint16_t global_BatteryVoltageLow_MotorCutoffSamples = 20; // motors are d
 // *************************************************
 // Motor control variables (actual definitions)
 // *************************************************
-const float global_AllMotorsScalePercent = 40.0f;                                // overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
 const float global_NegativeRpmScaleFactor = 2.0f;                                // reverse-direction compensation (applied to negative motor commands)
 const float global_WebLiftPresetPercent_Array[] = {45.0f, 60.0f, 75.0f, 100.0f}; // lift presets for web UI selection
 const size_t global_WebLiftPresetPercent_Array_len = sizeof(global_WebLiftPresetPercent_Array) / sizeof(global_WebLiftPresetPercent_Array[0]);
 const int global_WebLiftPresetPercent_Array_startIndex = 1; // e.g. 1 -> first preset is 60% after startup (startup is always 0)
-const float global_WebThrustPresetPercent = 50.0f;          // percent thrust, when in web UI "full forward" mode is 100%, this is still scaled with global_AllMotorsScalePercent!!
+const float global_WebThrustPresetPercent = 60.0f;          // percent thrust, when in web UI "full forward" mode is 100%, this is still scaled with global_AllMotorsScalePercent!!
 
 bool global_MotorsReversedFL = true;  // Flag: if true, all Front Left motor commands are reversed
 bool global_MotorsReversedFR = false; // Flag: if true, all Front Right motor commands are reversed
 bool global_MotorsReversedBL = true;  // Flag: if true, all Back Left motor commands are reversed
 bool global_MotorsReversedBR = false; // Flag: if true, all Back Right motor commands are reversed
 
+// overall motor power scaler to avoid overloading/burning motors, adjust depending on kV
+const float global_AllMotorsScalePercent = 60.0f; // 40.0f for CraftLG (18 000kV), 60.0f for CraftENSMM (14 800kV)
+
 // *************************************************
 // Wifi SSID, PW, IP addresses
 // *************************************************
-const char global_WifiApSsid[] = "µ-verCraft-II AP";
+// const char global_WifiApSsid[] = "µ-verCraft-II AP-LG";       // Craft LG
+const char global_WifiApSsid[] = "µ-verCraft-II AP"; // Craft ENSMM
 const char global_WifiApPassword[] = "Supmicrotech"; // minimum 8 chars for WPA2
 // Note: WebUi/Website: 192.168.4.1
 const uint16_t global_WebServerPort = 80;
 
 // *************************************************
-// Gyro/IMU/Complementary filter settings
-// *************************************************
-const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more, old 0.9f
-
-// *************************************************
 // Magnetometer calibration (hard-iron offsets)
 // *************************************************
 // Replace these values with the output of MagCalibrator tool found in 3_Software of this git repo
+// Craft LG
+// const int16_t global_MagOffsetX = -602; // Avg of -602, -613, -590
+// const int16_t global_MagOffsetY = 399;  // Avg of 389, 373, 434
+// const int16_t global_MagOffsetZ = -438; // Avg of -510, -202, -602
 
-// // Craft LG
-// const int16_t global_MagOffsetX = -734;
-// const int16_t global_MagOffsetY = -22;
-// const int16_t global_MagOffsetZ = -517;
-
-//Craft ENSMM
+// Craft ENSMM
 const int16_t global_MagOffsetX = -619;
 const int16_t global_MagOffsetY = 989;
 const int16_t global_MagOffsetZ = 44;
+
+// *************************************************
+// Gyro/IMU/Complementary filter settings
+// *************************************************
+const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter alpha, high = trust gyro more, old 0.9f
 
 // *************************************************
 // Control loop constants (example, if you enable them)
@@ -105,9 +107,15 @@ const float global_YawCenterSensitivity = 450.0f;          // sensitivity around
 // *************************************************
 // Yaw RATE PID (deg/s).
 // Start conservative; tune on hardware.
-const float global_YawRatePid_Kp = 2.0f;
-const float global_YawRatePid_Ki = 4.0f;
-const float global_YawRatePid_Kd = 0.04f;
+// LuisCraft:
+// const float global_YawRatePid_Kp = 2.0f;        // LuisCraft: 2.0f
+// const float global_YawRatePid_Ki = 4.0f;        // LuisCraft: 4.0f
+// const float global_YawRatePid_Kd = 0.04f;       // LuisCraft: 0.04f
+
+// ENSMM Craft:
+const float global_YawRatePid_Kp = 0.8f;  // ENSMM Craft: 1.0f
+const float global_YawRatePid_Ki = 2.0f;  // ENSMM Craft: 2.0f
+const float global_YawRatePid_Kd = 0.01f; // ENSMM Craft: 0.02f
 
 // PID output is fed into MotorMixer::setDiffThrust() which expects [-100..100].
 const float global_YawRatePid_OutputLimit = 100.0f;
@@ -121,9 +129,9 @@ const float global_YawRatePid_IntegratorLimit = 50.0f;
 // Outer loop: heading error (deg) -> yaw-rate setpoint (deg/s).
 // Start with conservative gains; tune on hardware.
 // Ziegler nicosl: Ku = 50, Pu = 1,5s => Kp 0,6*Ku=30, Ki=1.2*Ku/Pu=40, Kd=0.075*Ku*Pu=5
-const float global_HeadingPid_Kp = 40.0f; // 6
+const float global_HeadingPid_Kp = 25.0f; // 6
 const float global_HeadingPid_Ki = 1.1f;  // 0
-const float global_HeadingPid_Kd = 1.1f;  // 0.3
+const float global_HeadingPid_Kd = 0.3f;  // 0.3
 
 // Limit yaw-rate request from heading-hold to keep it smooth.
 const float global_HeadingPid_OutputLimit_dps = 100.0f;
@@ -143,6 +151,6 @@ const float global_IRSensorDistance_b_meters = 0.06f; // triangle has base of le
 // Thresholds, limits, etc.
 // *************************************************
 // IR-line sensor thresholds
-const float global_IRSensor_Threshold = 150.0f; // black line over 150
-const float global_IRSensor_Hysteresis = 5.0f; // hysteresis for line detection
+const float global_IRSensor_Threshold = 150.0f;     // black line over 150
+const float global_IRSensor_Hysteresis = 5.0f;      // hysteresis for line detection
 const float global_IRSensor_Timeout_us = 500000.0f; // timeout in microseconds for incomplete crossings (0.3 seconds)

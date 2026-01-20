@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Arduino.h>
+#include <math.h>
 
 // AutonomousSequence
-// Simple time-based sequence runner for "M-Mode".
+// Event-based "SPS-like" runner for autonomous competition mode ("M-Mode").
 // - Calibrates a start heading by averaging the complementary-filter heading over time.
-// - Then runs a fixed heading/thrust sequence.
+// - Waits for motors to be armed.
+// - Executes a short blind start to pass the start line.
+// - Then runs a looping, line-event-driven sequence using IR line measurements:
+//   pattern (after StartBlind): -90°,-90°,0°,0°,... (repeat)
 // - Can be aborted at any time.
 //
 // This class is designed to be ticked from the motor/control task (deterministic timing).
@@ -18,9 +22,11 @@ public:
 		Idle = 0,
 		Calibrating,
 		WaitingForArm,
-		HoldStart,
-		TurnMinus90,
-		TurnMinus180,
+		StartBlind,
+		DriveStraight_FirstSector,
+		DriveCurveMinus90_FirstSector,
+		DriveCurveMinus90_SecondSector,
+		DriveStraight_SecondSector,
 		ExitRequested,
 	};
 
@@ -40,7 +46,18 @@ public:
 	// heading_deg: current yaw/heading estimate (0..360), from complementary filter
 	// headingFresh: true if the heading reading is considered fresh/valid
 	// motorsEnabled: true if motors are currently enabled/armed
-	void update(uint32_t nowMs, float heading_deg, bool headingFresh, bool motorsEnabled);
+	// lineEventFresh: true if a new IR line crossing event is available this tick
+	// lineAlpha_deg: IR-derived angle to the line (deg). Valid when lineEventFresh==true, else ignored.
+	// lineVPerp_mps: IR-derived perpendicular velocity to the line (m/s). Valid when lineEventFresh==true, else ignored.
+	// headingAtLine_deg: heading snapshot taken at the moment the line event was recorded.
+	void update(uint32_t nowMs,
+				float heading_deg,
+				bool headingFresh,
+				bool motorsEnabled,
+				bool lineEventFresh,
+				float lineAlpha_deg,
+				float lineVPerp_mps,
+				float headingAtLine_deg);
 
 	bool isActive() const;
 	State state() const;
@@ -56,6 +73,8 @@ public:
 	bool consumeExitRequest();
 
 	float startHeading_deg() const;
+	float lastLineAlpha_deg() const;
+	float lastLineVelocityPerp_mps() const;
 
 	static float wrap360(float deg);
 
@@ -79,6 +98,9 @@ private:
 	uint32_t sampleCount_ = 0;
 
 	float startHeadingDeg_ = 0.0f;
+
+	float lastLineAlphaDeg_ = NAN;
+	float lastLineVelPerp_mps_ = NAN;
 
 	// Cached outputs
 	bool overrideThrust_ = false;

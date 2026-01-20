@@ -52,6 +52,16 @@ bool AutonomousSequence::consumeExitRequest()
     return true;
 }
 
+float AutonomousSequence::lastLineAlpha_deg() const
+{
+    return lastLineAlphaDeg_;
+}
+
+float AutonomousSequence::lastLineVelocityPerp_mps() const
+{
+    return lastLineVelPerp_mps_;
+}
+
 float AutonomousSequence::startHeading_deg() const
 {
     return startHeadingDeg_;
@@ -105,13 +115,31 @@ float AutonomousSequence::computeAverageHeading() const
     return wrap360(ang);
 }
 
-void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingFresh, bool motorsEnabled)
+void AutonomousSequence::update(uint32_t nowMs,
+                                float heading_deg,
+                                bool headingFresh,
+                                bool motorsEnabled,
+                                bool lineEventFresh,
+                                float lineAlpha_deg,
+                                float lineVPerp_mps,
+                                float headingAtLine_deg)
 {
     // Default outputs each tick
     overrideThrust_ = false;
     thrustOverridePercent_ = 0.0f;
     wantsHeadingHold_ = false;
-    headingTargetDeg_ = 0.0f;
+    // NOTE: Do NOT reset headingTargetDeg_ here.
+    // It is the persistent heading-hold setpoint that must survive across ticks while we are
+    // waiting for the next line event.
+
+    // Latch the latest line telemetry for possible future strategies/debug.
+    // lineEventFresh is expected to be a one-shot (edge) signal: true only on the tick where
+    // the IR module reports a NEW line crossing event.
+    if (lineEventFresh)
+    {
+        lastLineAlphaDeg_ = lineAlpha_deg;
+        lastLineVelPerp_mps_ = lineVPerp_mps;
+    }
 
     // Apply stop request at any time.
     if (stopRequested_)
@@ -136,10 +164,14 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
         return;
     }
 
-    // Safety: if motors are disarmed during thrust phases, stop and exit.
+    // Safety: if motors are disarmed while the sequence is actively commanding motion, stop and exit.
     if (!motorsEnabled)
     {
-        if (state_ == State::HoldStart || state_ == State::TurnMinus90 || state_ == State::TurnMinus180)
+        if (state_ == State::StartBlind ||
+            state_ == State::DriveStraight_FirstSector ||
+            state_ == State::DriveCurveMinus90_FirstSector ||
+            state_ == State::DriveCurveMinus90_SecondSector ||
+            state_ == State::DriveStraight_SecondSector)
         {
             enterState(State::ExitRequested, nowMs);
         }
@@ -147,29 +179,35 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
 
     const uint32_t elapsedMs = nowMs - stateStartMs_;
 
-    // The real "SPS-like" programming for the competition sequence is defined here:
-    // New sequence, it is no longer time based, this time it's event based:
-    // Line-sequence is as follows: 0/blind/startLine -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> ... (continue loop)
-    //[0°/blind] -> [0°/line detect] -> [-90°/line detect] -> [0°/line detect] -> [0°/line detect] -> [-90°/line detect] -> [-90°/line detect] -> [0°/line detect] -> exit
     /*
-        New idea for real structure:
+       The goal is:
+        // The real "SPS-like" programming for the competition sequence is defined here:
+        // Line-sequence is like the following sectors: 0/blind/jumpStartLine -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> -90 -> -90 -> 0 -> 0 -> ... (continue loop)
+        //[blind/hold] -> [waitForLine/-90°] -> [waitForLine/-90°] -> [waitForLine/0°] -> [waitForLine/0°] -> [waitForLine/-90°] -> [waitForLine/-90°] -> [waitForLine/0°] -> -> [waitForLine/0°] -> …
+        Wee keep:
         - Calibrating: 2s standstill, average heading
         - WaitingForArm: wait until motorsEnabled==true
 
         - When "go":
-        1.) [0°/blind]: hold direction "blind" for 0.5s with thrust 50% -> surpass the start line blindly
-        2.) [0°/line detect]: hold direction "bilnd" until IR sensors detect line (thrust 45%), then
-            "correction step": use the angle from the IR sensors, do math:
-            newHeadingSetpoint = currentHeading - alpha - 0deg (currentAngle from Complementary filter, alpha from IR sensors)
-        3.) [-90°/line detect]: continue as before, until line detected, then do correction step with -90deg, maths:
-            newHeadingSetpoint = currentHeading - alpha - (-90deg)
-        4.) [0°/line detect]: continue as before, until line detected, then do correction step with 0deg, maths:
-            newHeadingSetpoint = currentHeading - alpha - 0deg
-        ... repeat steps 3 and 4 until stop condition ...
-    */
+        1.) [waitForLine/0°/blind]: hold direction "blind" for a short period with a little higher thrust than later -> surpass the start line blindly
 
-    // right here is the old time-based sequence, needs to be replaced with the new event-based sequence
-    // time based was: calibrate, go straight 1.6s, turn -90 0.75s, turn -180 5s, exit
+        2.) DriveCurveMinus90_FirstSector: wait until IR sensors detect line, now we will start the first -90° turn. We do this by the "correction step": use the angle from the IR sensors, do math:
+            newHeadingSetpoint = currentHeading - alpha - 90deg (currentAngle from Complementary filter, alpha from IR sensors)
+
+        3.) DriveCurveMinus90_SecondSector: wait until IR sensors detect line , now we will start the second -90° turn, again with the correction step with -90deg, maths:
+            newHeadingSetpoint = currentHeading - alpha -90deg
+
+        4.) DriveStraight_FirstSector: wait until IR sensors detect line, this times we want to try to drive as perpendicular to the line as possible. For this we use the formula:
+            newHeadingSetpoint = currentHeading - alpha + 0deg
+
+        5.) DriveStraight_SecondSector: wait until IR sensors detect line, this times we want to try to drive as perpendicular to the line as possible. For this we use the formula:
+            newHeadingSetpoint = currentHeading - alpha + 0deg
+
+        6.) loop back to DriveCurveMinus90_FirstSector: wait until IR sensors detect line, now we will start the first -90° turn. We do this by the "correction step": use the angle from the IR sensors, do math:
+            newHeadingSetpoint = currentHeading - alpha - 90deg (currentAngle from Complementary filter, alpha from IR sensors)
+
+        ... repeat until motors are turned of, or M-button is deactivated ...
+    */
     switch (state_)
     {
     case State::Calibrating:
@@ -188,7 +226,8 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
             startHeadingDeg_ = computeAverageHeading();
             if (motorsEnabled)
             {
-                enterState(State::HoldStart, nowMs);
+                headingTargetDeg_ = wrap360(startHeadingDeg_);
+                enterState(State::StartBlind, nowMs);
             }
             else
             {
@@ -205,44 +244,118 @@ void AutonomousSequence::update(uint32_t nowMs, float heading_deg, bool headingF
 
         if (motorsEnabled)
         {
-            enterState(State::HoldStart, nowMs);
+            headingTargetDeg_ = wrap360(startHeadingDeg_);
+            enterState(State::StartBlind, nowMs);
         }
         break;
 
-    case State::HoldStart:
-        // Hold heading for 2s with thrust override.
+    case State::StartBlind:
+        // 1) [0°/blind]: hold direction "blind" for 1.0s with thrust 15% to surpass the start line.
+        Serial.println("1.) StartBlind, aveaged heading: " + String(startHeadingDeg_));
         overrideThrust_ = true;
-        thrustOverridePercent_ = 20.0f;
+        thrustOverridePercent_ = 15.0f;
         wantsHeadingHold_ = true;
         headingTargetDeg_ = wrap360(startHeadingDeg_);
 
-        if (elapsedMs >= 1600)
+        // Drive blind for 1s, then switch to DriveStraight_SecondSector to wait for the first line event that starts the first -90° curve.
+        if (elapsedMs >= 1000)
         {
-            enterState(State::TurnMinus90, nowMs);
+            // Because we did not arrive at the line triggering the first curve, we give to DriveStraight_SecondSector so we continue straight until the first line event that starts the first -90° curve.
+            Serial.println("   Transition From blind drive to wainting for first line event: DriveStraight_SecondSector");
+            enterState(State::DriveStraight_SecondSector, nowMs);
         }
         break;
 
-    case State::TurnMinus90:
+    case State::DriveStraight_FirstSector:
+        // We continue to drive straight (0°) first sector until a new line event.
         overrideThrust_ = true;
-        thrustOverridePercent_ = 20.0f;
+        thrustOverridePercent_ = 10.0f;
         wantsHeadingHold_ = true;
-        headingTargetDeg_ = wrap360(startHeadingDeg_ - 90.0f);
+        headingTargetDeg_ = wrap360(headingTargetDeg_);
 
-        if (elapsedMs >= 750)
+        // When arriving at a line, we set the setpoint to "driving straight 0° second sector" and give to DriveStraight_SecondSector
+        if (lineEventFresh)
         {
-            enterState(State::TurnMinus180, nowMs);
+            // Line event -> end of this straight sector.
+            // Recompute heading target for the next straight sector (0°).
+            const float alpha = lineAlpha_deg;
+            const float headingAtLine = headingAtLine_deg;
+
+            // newHeadingSetpoint = currentHeading - alpha + 0deg
+            headingTargetDeg_ = wrap360(headingAtLine - alpha);
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha (0deg)" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha));
+            Serial.println("   Transition to DriveStraight_SecondSector");
+            enterState(State::DriveStraight_SecondSector, nowMs);
         }
         break;
 
-    case State::TurnMinus180:
+    case State::DriveStraight_SecondSector:
+        // We continue to drive straight (0°) second sector until a new line event.
         overrideThrust_ = true;
-        thrustOverridePercent_ = 20.0f;
+        thrustOverridePercent_ = 10.0f;
         wantsHeadingHold_ = true;
-        headingTargetDeg_ = wrap360(startHeadingDeg_ - 180.0f);
+        headingTargetDeg_ = wrap360(headingTargetDeg_);
 
-        if (elapsedMs >= 5000)
+        // When arriving at a line, we set the setpoint to "turning -90°" and give to DriveCurveMinus90_FirstSector
+        if (lineEventFresh)
         {
-            enterState(State::ExitRequested, nowMs);
+            const float alpha = lineAlpha_deg;
+            const float headingAtLine = headingAtLine_deg;
+            // Line event -> end of straight segment, next segment is the first -90° sector.
+
+            // newHeadingSetpoint = currentHeading - alpha - 90deg
+            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f);
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90");
+            Serial.println("   Transition to DriveCurveMinus90_FirstSector");
+            enterState(State::DriveCurveMinus90_FirstSector, nowMs);
+        }
+        break;
+
+    case State::DriveCurveMinus90_FirstSector:
+        // Continue to drive curve -90° first sector until a new line event.
+        overrideThrust_ = true;
+        thrustOverridePercent_ = 10.0f;
+        wantsHeadingHold_ = true;
+        headingTargetDeg_ = wrap360(headingTargetDeg_);
+
+        // When arriving at a line, we set the setpoint to "turning -90° second sector" and give to DriveCurveMinus90_SecondSector
+        if (lineEventFresh)
+        {
+            // Line event -> end of first -90° curve sector.
+            const float alpha = lineAlpha_deg;
+            const float headingAtLine = headingAtLine_deg;
+
+            // newHeadingSetpoint = currentHeading - alpha - 90deg
+            headingTargetDeg_ = wrap360(headingAtLine - alpha - 90.0f);
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha - 90deg" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha) + " - 90");
+            Serial.println("   Transition to DriveCurveMinus90_SecondSector");
+            enterState(State::DriveCurveMinus90_SecondSector, nowMs);
+        }
+        break;
+
+    case State::DriveCurveMinus90_SecondSector:
+        // We continue to drive the second curve -90° second sector until a new line event.
+        overrideThrust_ = true;
+        thrustOverridePercent_ = 10.0f;
+        wantsHeadingHold_ = true;
+        headingTargetDeg_ = wrap360(headingTargetDeg_);
+
+        // When arriving at a line, we set the setpoint to "driving straight 0° first sector" and give to DriveStraight_FirstSector
+        if (lineEventFresh)
+        {
+            // Line event -> end of -90° segment, next segment returns to straight (0°).
+            const float alpha = lineAlpha_deg;
+            const float headingAtLine = headingAtLine_deg;
+
+            // newHeadingSetpoint = currentHeading - alpha + 0deg
+            headingTargetDeg_ = wrap360(headingAtLine - alpha);
+            Serial.println("   Line detected! Next: NewH = headingAtLine - alpha (0deg)" +
+                           String(headingTargetDeg_) + " = " + String(headingAtLine) + " - " + String(alpha));
+            Serial.println("   Transition to DriveStraight_FirstSector");
+            enterState(State::DriveStraight_FirstSector, nowMs);
         }
         break;
 

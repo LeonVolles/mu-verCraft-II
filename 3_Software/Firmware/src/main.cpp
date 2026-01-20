@@ -81,6 +81,14 @@ static volatile uint32_t g_lastYawRateUpdate_us = 0; // micros() timestamp
 static volatile float g_yawMeasured_deg = 0.0f;
 static volatile uint32_t g_lastYawUpdate_us = 0; // micros() timestamp
 
+// Shared IR line crossing event (produced by task_calcIrSensors, consumed by motor/control task).
+static portMUX_TYPE g_irMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool g_irLineEventFresh = false;
+static float g_irAlpha_deg = NAN;
+static float g_irVPerp_mps = NAN;
+static float g_irHeadingAtLine_deg = NAN;
+static uint32_t g_irLineEventMs = 0;
+
 // Battery telemetry is produced by the battery task and sent by the wifi task.
 static portMUX_TYPE g_telemetryMux = portMUX_INITIALIZER_UNLOCKED;
 static float g_battVoltage_V = 0.0f;
@@ -257,13 +265,13 @@ void task_wifiManager(void *parameter)
       const uint32_t stImu = (uint32_t)uxTaskGetStackHighWaterMark(taskH_imu) * (uint32_t)sizeof(StackType_t);
       const uint32_t stWifi = (uint32_t)uxTaskGetStackHighWaterMark(taskH_wifi) * (uint32_t)sizeof(StackType_t);
       const uint32_t stBat = (uint32_t)uxTaskGetStackHighWaterMark(taskH_batteryMonitor) * (uint32_t)sizeof(StackType_t);
-      Serial.printf("[DIAG] heap_free=%lu heap_min=%lu stackB motor=%lu imu=%lu wifi=%lu bat=%lu\n",
-                    (unsigned long)freeHeap,
-                    (unsigned long)minHeap,
-                    (unsigned long)stMotor,
-                    (unsigned long)stImu,
-                    (unsigned long)stWifi,
-                    (unsigned long)stBat);
+      // Serial.printf("[DIAG] heap_free=%lu heap_min=%lu stackB motor=%lu imu=%lu wifi=%lu bat=%lu\n",
+      //               (unsigned long)freeHeap,
+      //               (unsigned long)minHeap,
+      //               (unsigned long)stMotor,
+      //               (unsigned long)stImu,
+      //               (unsigned long)stWifi,
+      //               (unsigned long)stBat);
     }
 
     vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -476,7 +484,30 @@ void task_motorManagement(void *parameter)
     const bool yawFresh = (lastYawUs != 0) && ((nowUs - lastYawUs) < 150000); // 150ms freshness
     const float yawMeasured_deg = yawFresh ? g_yawMeasured_deg : 0.0f;
 
-    autonomousSequence.update(millis(), yawMeasured_deg, yawFresh, effectiveMotorsEnabled);
+    // Consume a one-shot IR line event (if available) for the autonomous sequence.
+    bool lineEventFresh = false;
+    float lineAlpha_deg = NAN;
+    float lineVPerp_mps = NAN;
+    float headingAtLine_deg = NAN;
+    portENTER_CRITICAL(&g_irMux);
+    lineEventFresh = g_irLineEventFresh;
+    if (lineEventFresh)
+    {
+      lineAlpha_deg = g_irAlpha_deg;
+      lineVPerp_mps = g_irVPerp_mps;
+      headingAtLine_deg = g_irHeadingAtLine_deg;
+      g_irLineEventFresh = false;
+    }
+    portEXIT_CRITICAL(&g_irMux);
+
+    autonomousSequence.update(millis(),
+                              yawMeasured_deg,
+                              yawFresh,
+                              effectiveMotorsEnabled,
+                              lineEventFresh,
+                              lineAlpha_deg,
+                              lineVPerp_mps,
+                              headingAtLine_deg);
 
     if (autonomousSequence.isActive())
     {
@@ -676,8 +707,8 @@ void task_irSensors(void *parameter)
 
     irSensors.enqueueSample(latestSamples, latestTimestamps);
 
-        vTaskDelay(2 / portTICK_PERIOD_MS);
-    }
+    vTaskDelay(2 / portTICK_PERIOD_MS);
+  }
 }
 
 void task_calcIrSensors(void *parameter)
@@ -691,12 +722,27 @@ void task_calcIrSensors(void *parameter)
     // Consume all available samples from the queue and run line detection.
     irSensors.processQueue(global_IRSensor_Threshold, global_IRSensor_Hysteresis);
 
-    const float alpha = irSensors.getAlphaToLine();
-    const float vPerp = irSensors.getVelocityPerpToLine();
-    // Serial.printf("[task_calcIrSensors] alpha=%.3f deg, v_perp=%.3f m/s\n", alpha, vPerp);
+    // If a new complete crossing was detected, publish a one-shot event for the motor task.
+    if (irSensors.hasNewMeasurement())
+    {
+      const float alpha = irSensors.getAlphaToLine();
+      const float vPerp = irSensors.getVelocityPerpToLine();
+      const float headingAtLine = g_yawMeasured_deg; // snapshot (good enough as a best-effort reading)
+      const uint32_t nowMs = millis();
 
-    // Adjust cadence as needed; slower than producer is fine because queue decouples rate.
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+      portENTER_CRITICAL(&g_irMux);
+      g_irAlpha_deg = alpha;
+      g_irVPerp_mps = vPerp;
+      g_irHeadingAtLine_deg = headingAtLine;
+      g_irLineEventMs = nowMs;
+      g_irLineEventFresh = true;
+      portEXIT_CRITICAL(&g_irMux);
+
+      irSensors.consumeNewMeasurement();
+    }
+
+    // Cadence: keep reasonably fast so the autonomous loop reacts quickly.
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }
 
