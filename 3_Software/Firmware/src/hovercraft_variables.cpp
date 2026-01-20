@@ -73,13 +73,16 @@ const float global_ComplementaryFilter_yawAlpha = 0.9f; // Complementary filter 
 // Magnetometer calibration (hard-iron offsets)
 // *************************************************
 // Replace these values with the output of MagCalibrator tool found in 3_Software of this git repo
-// const int16_t global_MagOffsetX = -689;
-// const int16_t global_MagOffsetY = 342;
-// const int16_t global_MagOffsetZ = 6;
 
-const int16_t global_MagOffsetX = -734;
-const int16_t global_MagOffsetY = -22;
-const int16_t global_MagOffsetZ = -517;
+// // Craft LG
+// const int16_t global_MagOffsetX = -734;
+// const int16_t global_MagOffsetY = -22;
+// const int16_t global_MagOffsetZ = -517;
+
+//Craft ENSMM
+const int16_t global_MagOffsetX = -619;
+const int16_t global_MagOffsetY = 989;
+const int16_t global_MagOffsetZ = 44;
 
 // *************************************************
 // Control loop constants (example, if you enable them)
